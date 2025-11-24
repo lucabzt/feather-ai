@@ -1,0 +1,44 @@
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_mistralai import ChatMistralAI
+from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models.chat_models import BaseChatModel
+from ._exceptions import ModelNotSupportedException
+
+provider_mapping = {
+    "gemini": ChatGoogleGenerativeAI,
+    "claude": ChatAnthropic,
+    "openai": ChatOpenAI,
+    "mistral": ChatMistralAI
+}
+
+model_mapping = {
+    "gemini": lambda model: model.startswith("gemini"),
+    "claude": lambda model: model.startswith("claude"),
+    "openai": lambda model: model.startswith("gpt"),
+    "mistral": lambda model: model.startswith("mistral")
+}
+
+def get_provider(model: str) -> BaseChatModel:
+    """
+    get the specified LLM provider baseclass
+    Args:
+        model: string containing model name
+
+    Returns:
+    The Chat baseclass from langchain
+    """
+    provider_key = None
+    # Extract the provider prefix from the model name
+    for key in provider_mapping.keys():
+        if model_mapping[key](model):
+            provider_key = key
+            break
+
+    # Error handling if model does not exist
+    if provider_key is None:
+        raise ModelNotSupportedException(model)
+
+    return provider_mapping[provider_key](
+        model=model  # type: ignore
+    )
