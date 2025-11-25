@@ -1,0 +1,23 @@
+Luca Bozzetti
+Munich, Germany
+[email protected]
++49 [Your Phone Number]
+
+BMW Group
+Autonomes Fahren
+Munich, Germany
+
+Subject: Application for Praktikant Agentische KI-Systeme für Automatisiertes Fahren (Job ID: 173346)
+
+Dear Hiring Manager,
+
+Autonomous driving has always fascinated me and was one of the main reasons I got into the AI/ML space. I am writing to apply for the internship position in Agentic AI Systems for Automated Driving because working on intelligent automation for virtual validation at BMW combines my passion for autonomous systems with practical engineering impact.
+
+I am currently a third-year Information Systems student at TUM with a GPA of 1.8 (top 2% of my program) and on exchange at the National University of Singapore until December 2025. In June 2025, I won first place at the Google Agent Development Kit Hackathon by building Nexora, an AI-powered platform using multi-agent orchestration and RAG pipelines. This project involved designing specialized agents that coordinate complex workflows and integrate various APIs and cloud services, which directly aligns with the core requirements of this position. I have hands-on experience with Python, LangChain/LangGraph and PyTorch, and I am eager to apply these skills to BMW's autonomous driving validation systems.
+
+Due to my exchange semester in Singapore, I would be available to start on February 15, 2026. I would like to propose working full-time for the first three months, then transitioning to a working student position for 12 months. This would allow me to contribute more deeply to the project while completing my studies at TUM.
+
+Thank you for considering my application. I look forward to discussing how I can contribute to BMW's work in automated driving.
+
+Best regards,
+Luca Bozzetti

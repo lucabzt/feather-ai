@@ -1,3 +1,5 @@
+from typing import Tuple
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_mistralai import ChatMistralAI
 from langchain_openai import ChatOpenAI
@@ -19,7 +21,7 @@ model_mapping = {
     "mistral": lambda model: model.startswith("mistral")
 }
 
-def get_provider(model: str) -> BaseChatModel:
+def get_provider(model: str) -> Tuple[BaseChatModel, str]:
     """
     get the specified LLM provider baseclass
     Args:
@@ -41,4 +43,4 @@ def get_provider(model: str) -> BaseChatModel:
 
     return provider_mapping[provider_key](
         model=model  # type: ignore
-    )
+    ), provider_key
