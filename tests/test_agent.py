@@ -6,8 +6,12 @@ gpt-5-nano
 gemini-2.5-flash-lite
 mistral-small-2506
 """
+import asyncio
 import os
+from pprint import pprint
+
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 from src.feather_ai import AIAgent
 from src.feather_ai.prompt import Prompt
@@ -23,7 +27,7 @@ def test_base_agent():
     for model in models:
         agent = AIAgent(model)
         resp = agent.run("What is the capital of France?")
-        print(f"{model}: {resp.text}")
+        print(f"{model}: {resp.content}")
 
 def test_multimodal():
     for model in models:
@@ -38,7 +42,36 @@ def test_multimodal():
         except ValueError as e:
             print(f"xxx Error for model {model}: {e}")
             continue
-        print(resp.text)
+        print(resp.content)
+
+def test_tool_calling():
+    print("=== Testing Tool calling ===")
+    def get_weather(location: str):
+        return f"The weather in {location} is rainy today."
+    for model in models:
+        agent = AIAgent(model, tools=[get_weather])
+        resp = agent.run("What is the weather in Paris right now?")
+        print(f"{model}: {resp}")
+
+def test_structured_output():
+    class Response(BaseModel):
+        answer: str = Field(..., description="The answer to the question")
+        confidence: float = Field(..., description="How confident from 0-1 you are in your answer")
+    print("=== Testing Structured Output ===")
+    for model in models:
+        agent = AIAgent(model, output_schema=Response)
+        resp = agent.run("What is the capital of France?")
+        pprint(f"{model}: {resp.content}")
+        assert isinstance(resp.content, Response)
+
+def test_async_run():
+    async def test_run():
+        agent = AIAgent("claude-haiku-4-5")
+        resp = await agent.arun("What is the capital of France?")
+        print(resp.content)
+
+    asyncio.run(test_run())
+
 
 if __name__ == "__main__":
-    test_multimodal()
+    test_tool_calling()
