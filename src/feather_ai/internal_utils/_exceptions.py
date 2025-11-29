@@ -15,3 +15,11 @@ class ModelNotSupportedException(Exception):
             message = f"Model '{model_name}' is not supported by feather_ai."
         super().__init__(message)
         self.model_name = model_name
+
+class ApiKeyMissingException(Exception):
+    """
+    Raised when an API key for the requested provider is missing.
+    """
+
+    def __init__(self, provider: str, env_key: str):
+        super().__init__(f"API key for {provider} is missing. Please set the {env_key} environment variable.")

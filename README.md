@@ -1,0 +1,11 @@
+# Colors:
+
+BLUE VARIANTS:
+a) #0357c1
+b) #22c4e0
+
+PINK VARIANTS:
+a) #be3389
+
+ORANGE/BROWN VARIANTS:
+a) #dfa987

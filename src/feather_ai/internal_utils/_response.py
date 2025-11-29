@@ -3,7 +3,7 @@ Contains the Response class that summarizes a response from an AI Agent
 """
 from typing import Optional, List
 from pydantic import BaseModel
-from src.feather_ai.utils._tracing import ToolTrace
+from src.feather_ai.internal_utils._tracing import ToolTrace
 
 
 class AIResponse:

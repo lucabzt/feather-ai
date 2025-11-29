@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from src.feather_ai import AIAgent
 from src.feather_ai.prompt import Prompt
+from src.feather_ai.utils import load_instruction_from_file
 
 load_dotenv()
 
@@ -25,7 +26,7 @@ def test_base_agent():
     question = "What is the capital of France?"
     print(question)
     for model in models:
-        agent = AIAgent(model)
+        agent = AIAgent(model, instructions=load_instruction_from_file("test_instructions.txt"))
         resp = agent.run("What is the capital of France?")
         print(f"{model}: {resp.content}")
 
@@ -50,8 +51,8 @@ def test_tool_calling():
         return f"The weather in {location} is rainy today."
     for model in models:
         agent = AIAgent(model, tools=[get_weather])
-        resp = agent.run("What is the weather in Paris right now?")
-        print(f"{model}: {resp}")
+        resp = agent.run("What is the weather in Paris right now? Keep your answer short.")
+        print(f"{model}: {resp.content}, Tool calls: {[str(tool_call) for tool_call in resp.tool_calls]}")
 
 def test_structured_output():
     class Response(BaseModel):
@@ -74,4 +75,4 @@ def test_async_run():
 
 
 if __name__ == "__main__":
-    test_tool_calling()
+    test_base_agent()

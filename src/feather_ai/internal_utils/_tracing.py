@@ -31,3 +31,6 @@ class ToolTrace:
     tool_name: str
     input: str
     output: str
+
+    def __str__(self) -> str:
+        return f"{self.input}: {self.output}"

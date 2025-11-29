@@ -10,11 +10,11 @@ from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, AI
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel
 
-from src.feather_ai.utils._provider import get_provider
-from src.feather_ai.utils._response import AIResponse
+from src.feather_ai.internal_utils._provider import get_provider
+from src.feather_ai.internal_utils._response import AIResponse
 from .prompt import Prompt
-from .utils._tools import make_tool, execute_tool, async_execute_tool
-from .utils._tracing import get_tool_trace_from_langchain
+from .internal_utils._tools import make_tool, execute_tool, async_execute_tool
+from .internal_utils._tracing import get_tool_trace_from_langchain
 
 
 class AIAgent:
