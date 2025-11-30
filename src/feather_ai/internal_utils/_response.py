@@ -13,6 +13,6 @@ class AIResponse:
 
     def __str__(self):
         if self.tool_calls:
-            return f"AIResponse(content={self.content}, tool_calls={self.tool_calls})"
+            return f"AIResponse(content={self.content}, tool_calls={[str(tool_call) for tool_call in self.tool_calls]})"
         else:
             return f"AIResponse(content={self.content})"

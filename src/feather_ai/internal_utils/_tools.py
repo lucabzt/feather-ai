@@ -2,13 +2,17 @@
 Helper functions for tool calling
 """
 import asyncio
-from typing import Callable, Any, get_type_hints
+from typing import Callable, Any, get_type_hints, List, Tuple, Type
 
-from langchain_core.messages import ToolMessage
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import ToolMessage, BaseMessage, AIMessage
 from langchain_core.tools import StructuredTool, BaseTool
-from pydantic import create_model, Field
+from pydantic import create_model, BaseModel
 import inspect
+import logging
+logger = logging.getLogger(__name__)
 
+from src.feather_ai.internal_utils._tracing import ToolTrace, get_tool_trace_from_langchain
 
 def execute_tool(response, tools):
     """
@@ -18,6 +22,7 @@ def execute_tool(response, tools):
     # Following code was copied from the tutorial about MCP:
     # Check if the LLM made tool calls
     if hasattr(response, 'tool_calls') and response.tool_calls:
+        logger.info(f"Calling the following tools: {response.tool_calls}")
         # Add the assistant message with tool calls to our conversation
         messages.append(response)
 
@@ -61,6 +66,7 @@ async def async_execute_tool(response, tools):
 
     # Check if the LLM made tool calls
     if hasattr(response, 'tool_calls') and response.tool_calls:
+        logger.info(f"Calling the following tools: {response.tool_calls}")
         # Add the assistant message with tool calls to our conversation
         messages.append(response)
 
@@ -101,6 +107,69 @@ async def async_execute_tool(response, tools):
         messages.extend(tool_messages)
 
     return messages
+
+async def async_react_agent_with_tooling(llm: BaseChatModel, tools: List[BaseTool], messages: List[BaseMessage], structured_output: bool = False) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace]]:
+    """
+    Agent that can call tools in multiple rounds.
+    Args:
+        llm: langchain chat model
+        tools: tools to be called by the chat model
+        messages: current conversation
+        structured_output: optional flag to indicate if the agent should return structured output
+
+    Returns:
+
+    """
+    tool_calls = []
+    while True:
+        response = await llm.ainvoke(messages)
+
+        # sorry for this hack, would not be necessary if langchain supported tool calls with structured output
+        if structured_output and hasattr(response, 'tool_calls') and response.tool_calls:
+            for tool_call in response.tool_calls:
+                if tool_call['name'] == 'respond':
+                    tool_args = tool_call['args']
+                    for tool in tools:
+                        if tool.name == 'respond':
+                            return tool.run(tool_args), tool_calls
+
+        tool_messages = await async_execute_tool(response, tools)
+        tool_calls.extend(get_tool_trace_from_langchain(response, tool_messages))
+        if not tool_messages:
+            return response, tool_calls
+        messages.extend(tool_messages)
+
+def react_agent_with_tooling(llm: BaseChatModel, tools: List[BaseTool], messages: List[BaseMessage], structured_output: bool = False) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace]]:
+    """
+    Agent that can call tools in multiple rounds.
+    Args:
+        llm: langchain chat model
+        tools: tools to be called by the chat model
+        messages: current conversation
+        structured_output: optional flag to indicate if the agent should return structured output
+
+    Returns:
+
+    """
+    tool_calls = []
+    while True:
+        response = llm.invoke(messages)
+
+        # sorry for this hack, would not be necessary if langchain supported tool calls with structured output
+        if structured_output and hasattr(response, 'tool_calls') and response.tool_calls:
+            for tool_call in response.tool_calls:
+                if tool_call['name'] == 'respond':
+                    tool_args = tool_call['args']
+                    for tool in tools:
+                        if tool.name == 'respond':
+                            return tool.run(tool_args), tool_calls
+
+        tool_messages = execute_tool(response, tools)
+        tool_calls.extend(get_tool_trace_from_langchain(response, tool_messages))
+        if not tool_messages:
+            return response, tool_calls
+        messages.extend(tool_messages)
+
 
 def make_tool(func: Callable) -> StructuredTool:
     """

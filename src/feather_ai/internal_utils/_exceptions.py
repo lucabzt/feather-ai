@@ -1,6 +1,8 @@
 """
 Custom exceptions for feather_ai.
 """
+from typing import Optional
+
 
 class ModelNotSupportedException(Exception):
     """
@@ -21,5 +23,7 @@ class ApiKeyMissingException(Exception):
     Raised when an API key for the requested provider is missing.
     """
 
-    def __init__(self, provider: str, env_key: str):
-        super().__init__(f"API key for {provider} is missing. Please set the {env_key} environment variable.")
+    def __init__(self, provider: Optional[str] = None, env_key: Optional[str] = None, message: str | None = None):
+        if message is None:
+            message = f"API key for provider '{provider}' is missing. Please set the environment variable '{env_key}'."
+        super().__init__(message)

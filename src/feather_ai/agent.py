@@ -12,8 +12,10 @@ from pydantic import BaseModel
 
 from src.feather_ai.internal_utils._provider import get_provider
 from src.feather_ai.internal_utils._response import AIResponse
+from .internal_utils._structured_tool import get_respond_tool
 from .prompt import Prompt
-from .internal_utils._tools import make_tool, execute_tool, async_execute_tool
+from .internal_utils._tools import make_tool, execute_tool, async_execute_tool, react_agent_with_tooling, \
+    async_react_agent_with_tooling
 from .internal_utils._tracing import get_tool_trace_from_langchain
 
 
@@ -30,7 +32,6 @@ class AIAgent:
                  instructions: Optional[str] = None,
                  tools: Optional[List[Callable[..., Any]]] = None,
                  output_schema: Optional[Type[BaseModel]] = None,
-                 tool_model: Optional[str] = None,
                  ):
         """
         Initializes a new Agent instance.
@@ -43,14 +44,17 @@ class AIAgent:
         self.structured_output = True if output_schema else False
         provider_data = get_provider(model)
         self.llm: BaseChatModel | Runnable = provider_data[0]
-        if self.structured_output:
+        if self.structured_output and not tools:
             self.llm = self.llm.with_structured_output(output_schema)
         self.provider_str: str = provider_data[1]
         # Bind tools to LLM
         if tools:
             self.tools = [make_tool(tool) for tool in tools]
-            self.tool_llm: BaseChatModel = get_provider(tool_model)[0].bind_tools(self.tools) if tool_model else self.llm.bind_tools(self.tools) # type: ignore
-
+            if self.structured_output:
+                self.tools.append(get_respond_tool(output_schema))
+                self.llm: BaseChatModel = get_provider(model)[0].bind_tools(self.tools, tool_choice='any')  # type: ignore
+            else:
+                self.llm: BaseChatModel = get_provider(model)[0].bind_tools(self.tools) # type: ignore
 
     def run(self, prompt: Prompt | str):
         """
@@ -71,11 +75,7 @@ class AIAgent:
         tool_calls = None
         ## Call tools if any
         if hasattr(self, "tools"):
-            tool_response = self.tool_llm.invoke(messages)
-            tool_messages = execute_tool(tool_response, self.tools)
-            messages.extend(tool_messages)
-            tool_calls = get_tool_trace_from_langchain(tool_response, tool_messages)
-            response = self.llm.invoke(messages)
+            response, tool_calls = react_agent_with_tooling(self.llm, self.tools, messages, self.structured_output)
         else:
             response = self.llm.invoke(messages)
 
@@ -104,11 +104,7 @@ class AIAgent:
         tool_calls = None
         ## Call tools if any
         if hasattr(self, "tools"):
-            tool_response = await self.tool_llm.ainvoke(messages)
-            tool_messages = await async_execute_tool(tool_response, self.tools)
-            messages.extend(tool_messages)
-            tool_calls = get_tool_trace_from_langchain(tool_response, tool_messages)
-            response = await self.llm.ainvoke(messages)
+            response, tool_calls = await async_react_agent_with_tooling(self.llm, self.tools, messages, self.structured_output)
         else:
             response = await self.llm.ainvoke(messages)
 
