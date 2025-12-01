@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 import logging
 
-from src.feather_ai.tools.web import google_search
+from src.feather_ai.tools.code_execution import code_execution_python
+from src.feather_ai.tools.web import google_search, web_tools, web_tools_async
 
 logging.basicConfig(level=logging.INFO)
 
@@ -59,10 +60,11 @@ def test_multimodal():
 
 def test_tool_calling():
     print("=== Testing Tool calling ===")
-    for model in models:
+    for model in models_small:
         agent = AIAgent(model, tools=[google_search])
         resp = agent.run("What is the weather in Paris today? Use google search to find the answer.")
         print(f"{model}: {resp.content}, Tool calls: {[str(tool_call) for tool_call in resp.tool_calls]}")
+        pprint(resp.input_messages)
 
 def test_structured_output():
     print("=== Testing Structured Output ===")
@@ -123,6 +125,22 @@ def test_async_run():
 
     asyncio.run(test_run())
 
+def test_complex_tools():
+    agent = AIAgent("gemini-2.5-flash-lite", tools=[*web_tools])
+    resp = agent.run("Search for a python code execution tool in langchain. Use google_search and then extract from the provided urls.")
+    print(resp)
+    print("--------------------------------")
+    pprint(resp.input_messages)
+
+async def test_async_complex_tools():
+    agent = AIAgent("gemini-2.5-flash-lite", tools=[code_execution_python, *web_tools_async])
+    resp = await agent.arun(""
+    "Please scrape this base url: https://docs.langchain.com/oss/python/langchain"
+                            "and this: https://google.github.io/adk-docs/ for a code execution tool in both frameworks. Give me an overview which one is easier to use.")
+    print(resp)
+    print("--------------------------------")
+    pprint(resp.input_messages)
+
 
 if __name__ == "__main__":
-    test_tool_calling()
+    asyncio.run(test_async_complex_tools())

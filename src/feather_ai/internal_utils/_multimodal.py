@@ -4,7 +4,7 @@ All providers handle multimodality differently so this defines all the message t
 import base64
 from typing import Dict, Any, List
 
-from src.feather_ai.document import Document
+from ..document import Document
 
 
 def get_content_claude(documents: List[Document]) -> List[Dict[str, Any]]:

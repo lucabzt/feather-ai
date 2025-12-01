@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Union
 from langchain_core.messages import HumanMessage
-from src.feather_ai.internal_utils._multimodal import get_content_claude, get_content_gemini
-from src.feather_ai.document import Document
+from .internal_utils._multimodal import get_content_claude, get_content_gemini
+from .document import Document
 
 
 class Prompt:

@@ -12,7 +12,7 @@ import inspect
 import logging
 logger = logging.getLogger(__name__)
 
-from src.feather_ai.internal_utils._tracing import ToolTrace, get_tool_trace_from_langchain
+from ._tracing import ToolTrace, get_tool_trace_from_langchain
 
 def execute_tool(response, tools):
     """
@@ -85,6 +85,7 @@ async def async_execute_tool(response, tools):
                         if hasattr(tool, 'coroutine') and tool.coroutine is not None:
                             tool_result = await tool.arun(tool_args)
                         else:
+                            logger.warning("Using synchronous tools will lead to sequential tool execution. Consider using asynchronous tools instead.")
                             tool_result = tool.run(tool_args)
                     except Exception as tool_error:
                         tool_result = f"Error executing tool: {tool_error}"
@@ -136,7 +137,11 @@ async def async_react_agent_with_tooling(llm: BaseChatModel, tools: List[BaseToo
         tool_messages = await async_execute_tool(response, tools)
         tool_calls.extend(get_tool_trace_from_langchain(response, tool_messages))
         if not tool_messages:
-            return response, tool_calls
+            if response.content:
+                return response, tool_calls
+            else:
+                response.content = messages[-1].content
+                return response, tool_calls
         messages.extend(tool_messages)
 
 def react_agent_with_tooling(llm: BaseChatModel, tools: List[BaseTool], messages: List[BaseMessage], structured_output: bool = False) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace]]:
@@ -167,7 +172,11 @@ def react_agent_with_tooling(llm: BaseChatModel, tools: List[BaseTool], messages
         tool_messages = execute_tool(response, tools)
         tool_calls.extend(get_tool_trace_from_langchain(response, tool_messages))
         if not tool_messages:
-            return response, tool_calls
+            if response.content:
+                return response, tool_calls
+            else:
+                response.content = messages[-1].content
+                return response, tool_calls
         messages.extend(tool_messages)
 
 

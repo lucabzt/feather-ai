@@ -10,13 +10,12 @@ from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, AI
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel
 
-from src.feather_ai.internal_utils._provider import get_provider
-from src.feather_ai.internal_utils._response import AIResponse
+from .internal_utils._provider import get_provider
+from .internal_utils._response import AIResponse
 from .internal_utils._structured_tool import get_respond_tool
 from .prompt import Prompt
-from .internal_utils._tools import make_tool, execute_tool, async_execute_tool, react_agent_with_tooling, \
+from .internal_utils._tools import make_tool, react_agent_with_tooling, \
     async_react_agent_with_tooling
-from .internal_utils._tracing import get_tool_trace_from_langchain
 
 
 class AIAgent:
@@ -81,9 +80,9 @@ class AIAgent:
 
         ## Check for structured output
         if self.structured_output:
-            return AIResponse(response, tool_calls)
+            return AIResponse(response, tool_calls, messages)
         else:
-            return AIResponse(response.content, tool_calls)
+            return AIResponse(response.content, tool_calls, messages)
 
     async def arun(self, prompt: Prompt | str):
         """
@@ -110,6 +109,6 @@ class AIAgent:
 
         ## Check for structured output
         if self.structured_output:
-            return AIResponse(response, tool_calls)
+            return AIResponse(response, tool_calls, messages)
         else:
-            return AIResponse(response.content, tool_calls)
+            return AIResponse(response.content, tool_calls, messages)
