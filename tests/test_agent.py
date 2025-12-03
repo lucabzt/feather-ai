@@ -8,6 +8,7 @@ mistral-small-2506
 """
 import asyncio
 import os
+import time
 from pprint import pprint
 
 from dotenv import load_dotenv
@@ -16,8 +17,9 @@ import logging
 
 from src.feather_ai.tools.code_execution import code_execution_python
 from src.feather_ai.tools.web import google_search, web_tools, web_tools_async
+from src.feather_ai.types import EOS
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.ERROR)
 
 from src.feather_ai import AIAgent
 from src.feather_ai.prompt import Prompt
@@ -33,6 +35,8 @@ class Response(BaseModel):
     answer: str = Field(..., description="The answer to the question")
     confidence: float = Field(..., description="How confident from 0-1 you are in your answer")
 def get_weather(location: str):
+    return f"The weather in {location} is rainy today."
+async def aget_weather(location: str):
     return f"The weather in {location} is rainy today."
 
 def test_base_agent():
@@ -141,6 +145,37 @@ async def test_async_complex_tools():
     print("--------------------------------")
     pprint(resp.input_messages)
 
+async def test_streaming():
+    agent = AIAgent("claude-haiku-4-5", tools=[*web_tools_async], output_schema=Response)
+    chunks = []
+    tool_calls = []
+    max_length = 40
+    async for chunk in agent.stream("whats the weather in kuala lumpur today?"):
+        if chunk[0] == "tool_call":
+            print(f"Model called tool: {chunk[1]}")
+            tool_calls.append(chunk[1])
+        if chunk[0] == "tool_response":
+            response = chunk[1]
+            tool_name = next((tc.name for tc in tool_calls if tc.id == response.tool_call_id), "unknown")
+            print(f"Tool {tool_name} responded with: {repr(response)[:max_length] + ('...' if len(repr(response)) > max_length else '')}")
+        if chunk[0] == "token":
+            if chunk[1] is EOS:
+                print("")
+            else:
+                print(chunk[1], end="", flush=True)
+        if chunk[0] == "structured_response":
+            print(chunk[1])
+        chunks.append(chunk)
+
+    """
+    print("\n\n--------------------------------")
+    print("SUMMARY (Token by Token):")
+    # test if token for token streaming works (google does not support that)
+    for chunk in chunks:
+        print(chunk)
+        time.sleep(0.2)
+    """
+
 
 if __name__ == "__main__":
-    asyncio.run(test_async_complex_tools())
+    asyncio.run(test_streaming())

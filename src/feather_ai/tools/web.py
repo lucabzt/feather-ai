@@ -83,9 +83,6 @@ def extract(urls: List[str]) -> List[Dict]:
 
     response = _client.extract(urls)
 
-    from pprint import pprint
-    pprint(response)
-
     # filter response to only include relevant keys
     keys = ["title", "url", "raw_content", "favicon"]
     errors = response.get("failed_results", [""])

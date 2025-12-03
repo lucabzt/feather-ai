@@ -53,5 +53,6 @@ def get_provider(model: str) -> Tuple[BaseChatModel, str]:
         raise ApiKeyMissingException(provider_key, env_vars[provider_key])
 
     return provider_mapping[provider_key](
-        model=model  # type: ignore
+        model=model, # type: ignore
+        streaming=True,
     ), provider_key

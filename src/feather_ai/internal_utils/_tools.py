@@ -2,7 +2,7 @@
 Helper functions for tool calling
 """
 import asyncio
-from typing import Callable, Any, get_type_hints, List, Tuple, Type
+from typing import Callable, Any, get_type_hints, List, Tuple, Type, AsyncGenerator
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage, BaseMessage, AIMessage
@@ -10,6 +10,10 @@ from langchain_core.tools import StructuredTool, BaseTool
 from pydantic import create_model, BaseModel
 import inspect
 import logging
+
+from src.feather_ai.types.response import ToolCall, ToolResponse
+from ..types.response import EOS
+
 logger = logging.getLogger(__name__)
 
 from ._tracing import ToolTrace, get_tool_trace_from_langchain
@@ -178,6 +182,82 @@ def react_agent_with_tooling(llm: BaseChatModel, tools: List[BaseTool], messages
                 response.content = messages[-1].content
                 return response, tool_calls
         messages.extend(tool_messages)
+
+
+async def stream_react_agent_with_tooling(
+        llm: BaseChatModel,
+        tools: List[BaseTool],
+        messages: List[BaseMessage],
+        structured_output: bool = False
+) -> AsyncGenerator[Tuple[str, str | ToolResponse | ToolCall], None]:
+    """
+    Complex function for streaming the responses from agents that can call tools in a meaningful way
+    Args:
+        llm: langchain chat model
+        tools: list of tools to be called by the chat model
+        messages: list of input messages
+        structured_output: not yet implemented, indicates if the agent should return structured output
+
+    Returns:
+        streams back the following tuples:
+        ("tool_call", ToolCall) if the model made a tool call
+        ("tool_response", ToolResponse) the response of the tool call that was made
+        ("token", str) chunk of output text from the model if it did not make a tool call
+        ("token", EOS) signals the end of a token stream by the LLM
+        ("structured_response", BaseModel) if structured_output is True
+    """
+    while True:
+        chunks = []
+        has_tool_calls = False
+        streamed_tokens = False
+
+        async for chunk in llm.astream(messages):
+            chunks.append(chunk)
+
+            # Detect tool calls early
+            if not has_tool_calls:
+                if (hasattr(chunk, 'tool_call_chunks') and chunk.tool_call_chunks) or \
+                        (hasattr(chunk, 'tool_calls') and chunk.tool_calls):
+                    has_tool_calls = True
+
+            # If no tool calls detected yet, stream tokens immediately
+            if not has_tool_calls and chunk.content:
+                streamed_tokens = True
+                yield "token", chunk.content[0].get('text', '') if isinstance(chunk.content, list) else chunk.content
+
+        if streamed_tokens:
+            yield "token", EOS
+
+        # Reconstruct full message
+        response = chunks[0]
+        for chunk in chunks[1:]:
+            response = response + chunk
+
+        # If we detected tool calls, yield the complete message
+        if has_tool_calls:
+            # If structured output, yield the structured response from the respond tool and return
+            for tool_call in response.tool_calls:
+                if tool_call['name'] == 'respond' and structured_output:
+                    tool_args = tool_call['args']
+                    for tool in tools:
+                        if tool.name == 'respond':
+                            yield "structured_response", tool.run(tool_args)
+                            return
+                yield "tool_call", ToolCall(**tool_call)
+
+            # Execute tools and continue
+            tool_messages = await async_execute_tool(response, tools)
+
+            if not tool_messages:
+                return
+
+            for tool_msg in filter(lambda m: isinstance(m, ToolMessage), tool_messages):
+                yield "tool_response", ToolResponse(content=tool_msg.content, tool_call_id=tool_msg.tool_call_id)
+
+            messages.extend(tool_messages)
+        else:
+            # Already streamed tokens, just return
+            return
 
 
 def make_tool(func: Callable) -> StructuredTool:

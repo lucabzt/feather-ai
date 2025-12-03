@@ -3,19 +3,19 @@ This file contains the main Agent class provided by feather_ai.
 The AIAgent class can be used to create intelligent agents that can perform various tasks.
 Its main advantage over other agentic AI frameworks is its simplicity and ease of use.
 """
-from typing import Optional, List, Callable, Any, Dict, Type
+from typing import Optional, List, Callable, Any, Type, AsyncGenerator, Tuple
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, ToolMessage
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel
 
 from .internal_utils._provider import get_provider
-from .internal_utils._response import AIResponse
+from src.feather_ai.types.response import AIResponse, ToolCall, ToolResponse
 from .internal_utils._structured_tool import get_respond_tool
 from .prompt import Prompt
 from .internal_utils._tools import make_tool, react_agent_with_tooling, \
-    async_react_agent_with_tooling
+    async_react_agent_with_tooling, stream_react_agent_with_tooling
 
 
 class AIAgent:
@@ -112,3 +112,32 @@ class AIAgent:
             return AIResponse(response, tool_calls, messages)
         else:
             return AIResponse(response.content, tool_calls, messages)
+
+    async def stream(self, prompt: Prompt | str) -> AsyncGenerator[Tuple[str, str | ToolCall | ToolResponse | BaseModel], None]:
+        """
+        Token by token streaming of the response from the agent.
+        Returns:
+            streams back one of the following tuples:
+            ("tool_call", ToolCall) if the model made a tool call
+            ("tool_response", ToolResponse) the response of the tool call that was made
+            ("token", str) chunk of output text from the model if it did not make a tool call
+            ("token", EOS) signals the end of a token stream by the LLM
+            ("structured_response", YourStructuredClass) if structured_output is True
+        """
+        messages: List[BaseMessage] = [
+            SystemMessage(content=self.system_instructions if self.system_instructions else ""),
+        ]
+
+        ## Check if user passed a Prompt Object or a string
+        if isinstance(prompt, Prompt):
+            messages.append(prompt.get_message(self.provider_str))
+        else:
+            messages.append(HumanMessage(content=prompt))
+
+        ## Call tools if any
+        if hasattr(self, "tools"):
+            async for chunk in stream_react_agent_with_tooling(self.llm, self.tools, messages, structured_output=self.structured_output):
+                yield chunk
+        else:
+            async for token in self.llm.astream(messages):
+                yield "token", token.content
