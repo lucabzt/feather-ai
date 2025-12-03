@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 import logging
 
+from src.feather_ai.tools import search_stock_images
 from src.feather_ai.tools.code_execution import code_execution_python
 from src.feather_ai.tools.web import google_search, web_tools, web_tools_async
 from src.feather_ai.types import EOS
@@ -65,8 +66,8 @@ def test_multimodal():
 def test_tool_calling():
     print("=== Testing Tool calling ===")
     for model in models_small:
-        agent = AIAgent(model, tools=[google_search])
-        resp = agent.run("What is the weather in Paris today? Use google search to find the answer.")
+        agent = AIAgent(model, tools=[search_stock_images])
+        resp = agent.run("Give me only a single url of a bmw car")
         print(f"{model}: {resp.content}, Tool calls: {[str(tool_call) for tool_call in resp.tool_calls]}")
         pprint(resp.input_messages)
 
@@ -178,4 +179,5 @@ async def test_streaming():
 
 
 if __name__ == "__main__":
-    asyncio.run(test_streaming())
+    #asyncio.run(test_streaming())
+    test_tool_calling()

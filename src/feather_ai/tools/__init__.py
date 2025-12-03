@@ -17,6 +17,7 @@ from .web import (
     web_tools_async,
 )
 from .code_execution import code_execution_python
+from .media import search_stock_images, search_stock_videos
 
 # Sync tools list
 all_tools = [
@@ -45,6 +46,9 @@ __all__ = [
     # Web tool lists
     "web_tools",
     "web_tools_async",
+    # media search
+    "search_stock_images",
+    "search_stock_videos",
     # Code execution
     "code_execution_python",
     # All tools lists
