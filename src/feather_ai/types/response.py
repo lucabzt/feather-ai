@@ -5,11 +5,11 @@ from typing import Optional, List, Type
 
 from langchain_core.messages import BaseMessage, ToolMessage
 from pydantic import BaseModel
-from src.feather_ai.internal_utils._tracing import ToolTrace
+from ..internal_utils._tracing import ToolTrace
 
 
 class AIResponse:
-    def __init__(self, content: str | BaseModel, tool_calls: Optional[List[ToolTrace]] = None, input_messages: Optional[List[BaseMessage]] = None):
+    def __init__(self, content: str | BaseModel | bytes, tool_calls: Optional[List[ToolTrace]] = None, input_messages: Optional[List[BaseMessage]] = None):
         self.content = content
         self.tool_calls = tool_calls
         self.input_messages = input_messages

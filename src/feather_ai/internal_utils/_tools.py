@@ -7,11 +7,12 @@ from typing import Callable, Any, get_type_hints, List, Tuple, Type, AsyncGenera
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage, BaseMessage, AIMessage
 from langchain_core.tools import StructuredTool, BaseTool
+from langchain_google_genai import Modality
 from pydantic import create_model, BaseModel
 import inspect
 import logging
 
-from src.feather_ai.types.response import ToolCall, ToolResponse
+from ..types.response import ToolCall, ToolResponse
 from ..types.response import EOS
 
 logger = logging.getLogger(__name__)
@@ -113,7 +114,11 @@ async def async_execute_tool(response, tools):
 
     return messages
 
-async def async_react_agent_with_tooling(llm: BaseChatModel, tools: List[BaseTool], messages: List[BaseMessage], structured_output: bool = False) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace]]:
+async def async_react_agent_with_tooling(
+        llm: BaseChatModel, tools: List[BaseTool],
+        messages: List[BaseMessage],
+        structured_output: bool = False,
+) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace]]:
     """
     Agent that can call tools in multiple rounds.
     Args:
@@ -148,7 +153,12 @@ async def async_react_agent_with_tooling(llm: BaseChatModel, tools: List[BaseToo
                 return response, tool_calls
         messages.extend(tool_messages)
 
-def react_agent_with_tooling(llm: BaseChatModel, tools: List[BaseTool], messages: List[BaseMessage], structured_output: bool = False) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace]]:
+def react_agent_with_tooling(
+        llm: BaseChatModel,
+        tools: List[BaseTool],
+        messages: List[BaseMessage],
+        structured_output: bool = False,
+) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace]]:
     """
     Agent that can call tools in multiple rounds.
     Args:
@@ -188,7 +198,7 @@ async def stream_react_agent_with_tooling(
         llm: BaseChatModel,
         tools: List[BaseTool],
         messages: List[BaseMessage],
-        structured_output: bool = False
+        structured_output: bool = False,
 ) -> AsyncGenerator[Tuple[str, str | ToolResponse | ToolCall], None]:
     """
     Complex function for streaming the responses from agents that can call tools in a meaningful way
@@ -256,7 +266,7 @@ async def stream_react_agent_with_tooling(
 
             messages.extend(tool_messages)
         else:
-            # Already streamed tokens, just return
+            # Already streamed tokens, just return if not image generator
             return
 
 

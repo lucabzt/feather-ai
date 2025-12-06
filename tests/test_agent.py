@@ -147,7 +147,7 @@ async def test_async_complex_tools():
     pprint(resp.input_messages)
 
 async def test_streaming():
-    agent = AIAgent("claude-haiku-4-5", tools=[*web_tools_async], output_schema=Response)
+    agent = AIAgent("gpt-4o", tools=[*web_tools_async])
     chunks = []
     tool_calls = []
     max_length = 40
@@ -177,7 +177,12 @@ async def test_streaming():
         time.sleep(0.2)
     """
 
+def test_image_gen():
+    agent = AIAgent("gemini-3-pro-image-preview")
+    response = agent.run(Prompt(text="Please turn the images that I sent into an aerial drone image as if it was captured from above. The people in the second image should still just be recognizable in the drone image", documents=["krabi.jpg", "krabi_people.jpg"]))
+    with open ("krabi_aerial.png", "wb") as f:
+        f.write(response.content)
+
 
 if __name__ == "__main__":
-    #asyncio.run(test_streaming())
-    test_tool_calling()
+    test_image_gen()
