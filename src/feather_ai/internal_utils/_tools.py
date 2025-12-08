@@ -198,6 +198,7 @@ async def stream_react_agent_with_tooling(
         llm: BaseChatModel,
         tools: List[BaseTool],
         messages: List[BaseMessage],
+        stream_mode: str = "tokens",
         structured_output: bool = False,
 ) -> AsyncGenerator[Tuple[str, str | ToolResponse | ToolCall], None]:
     """
@@ -206,6 +207,7 @@ async def stream_react_agent_with_tooling(
         llm: langchain chat model
         tools: list of tools to be called by the chat model
         messages: list of input messages
+        stream_mode: "tokens" - returns tokens one by one, "messages" - streams messages e.g. tool calls but not tokenwise
         structured_output: not yet implemented, indicates if the agent should return structured output
 
     Returns:
@@ -231,7 +233,7 @@ async def stream_react_agent_with_tooling(
                     has_tool_calls = True
 
             # If no tool calls detected yet, stream tokens immediately
-            if not has_tool_calls and chunk.content:
+            if not has_tool_calls and chunk.content and stream_mode == "tokens":
                 streamed_tokens = True
                 yield "token", chunk.content[0].get('text', '') if isinstance(chunk.content, list) else chunk.content
 
@@ -266,6 +268,9 @@ async def stream_react_agent_with_tooling(
 
             messages.extend(tool_messages)
         else:
+            if stream_mode == "messages":
+                yield "response", response
+                return
             # Already streamed tokens, just return if not image generator
             return
 
