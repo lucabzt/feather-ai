@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 import logging
 
 from src.feather_ai.agents.loop_agent import LoopAgent
+from src.feather_ai.rag_processors.fast_processor import chunk_documents
 from src.feather_ai.tools import search_stock_images
 from src.feather_ai.tools.code_execution import code_execution_python
 from src.feather_ai.tools.web import google_search, web_tools, web_tools_async
@@ -23,7 +24,7 @@ from src.feather_ai.types import EOS
 
 logging.basicConfig(level=logging.ERROR)
 
-from src.feather_ai import AIAgent, AIResponse
+from src.feather_ai import AIAgent, AIResponse, Document
 from src.feather_ai.prompt import Prompt
 from src.feather_ai.utils import load_instruction_from_file
 
@@ -192,6 +193,27 @@ async def test_loop_agent():
     async for chunk in loop.stream("return 0"):
         print(chunk)
 
+async def test_chunker():
+    doc1 = Document.from_path("./rag_docling/bafög_antwort.docx")
+    doc2 = "./rag_docling/docling.pdf"
+
+    start = time.time()
+    results = await chunk_documents([doc1, doc2])
+    scraped_results = []
+    for doc_result in results:
+        scraped_results_doc = []
+        for chunk in doc_result:
+            if chunk["type"] == "image":
+                chunk["content"] = chunk["content"][:10]
+                scraped_results_doc.append(chunk)
+            else:
+                scraped_results_doc.append(chunk)
+
+        scraped_results.append(scraped_results_doc)
+    end = time.time()
+    print(f"Document Chunking took {end - start} seconds")
+    print(scraped_results)
+
 
 if __name__ == "__main__":
-    asyncio.run(test_loop_agent())
+    asyncio.run(test_chunker())
