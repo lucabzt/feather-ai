@@ -65,7 +65,7 @@ class AIAgent(BaseAgent):
             else:
                 self.llm: BaseChatModel = get_provider(model)[0].bind_tools(self.tools) # type: ignore
 
-    def run(self, prompt: Prompt | str):
+    def run(self, prompt: Prompt | str | List[BaseMessage]):
         """
         Standard run method for the AIAgent class.
         Returns:
@@ -78,8 +78,10 @@ class AIAgent(BaseAgent):
         ## Check if user passed a Prompt Object or a string
         if isinstance(prompt, Prompt):
             messages.append(prompt.get_message(self.provider_str))
-        else:
+        elif isinstance(prompt, str):
             messages.append(HumanMessage(content=prompt))
+        else:
+            messages.extend(prompt)
 
         tool_calls = None
         ## Call tools if any
@@ -101,7 +103,7 @@ class AIAgent(BaseAgent):
         else:
             return AIResponse(response.content, tool_calls, messages)
 
-    async def arun(self, prompt: Prompt | str):
+    async def arun(self, prompt: Prompt | str | List[BaseMessage]):
         """
         Async run method for the AIAgent class.
         Returns:
@@ -114,8 +116,10 @@ class AIAgent(BaseAgent):
         ## Check if user passed a Prompt Object or a string
         if isinstance(prompt, Prompt):
             messages.append(prompt.get_message(self.provider_str))
-        else:
+        elif isinstance(prompt, str):
             messages.append(HumanMessage(content=prompt))
+        else:
+            messages.extend(prompt)
 
         tool_calls = None
         ## Call tools if any
@@ -137,7 +141,7 @@ class AIAgent(BaseAgent):
         else:
             return AIResponse(response.content, tool_calls, messages)
 
-    async def stream(self, prompt: Prompt | str, stream_mode: Optional[str] = "tokens") -> AsyncGenerator[Tuple[str, str | ToolCall | ToolResponse | BaseModel | bytes | AIResponse], None]:
+    async def stream(self, prompt: Prompt | str | List[BaseMessage], stream_mode: Optional[str] = "tokens") -> AsyncGenerator[Tuple[str, str | ToolCall | ToolResponse | BaseModel | bytes | AIResponse], None]:
         """
         Token by token streaming of the response from the agent.
         Args:
@@ -160,8 +164,10 @@ class AIAgent(BaseAgent):
         ## Check if user passed a Prompt Object or a string
         if isinstance(prompt, Prompt):
             messages.append(prompt.get_message(self.provider_str))
-        else:
+        elif isinstance(prompt, str):
             messages.append(HumanMessage(content=prompt))
+        else:
+            messages.extend(prompt)
 
         ## Call tools if any
         if hasattr(self, "tools"):

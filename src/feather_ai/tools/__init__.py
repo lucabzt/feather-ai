@@ -18,6 +18,7 @@ from .web import (
 )
 from .code_execution import code_execution_python
 from .media import search_stock_images, search_stock_videos
+from .media_async import asearch_stock_images ,asearch_stock_videos
 
 # Sync tools list
 all_tools = [
@@ -49,6 +50,8 @@ __all__ = [
     # media search
     "search_stock_images",
     "search_stock_videos",
+    "asearch_stock_images",
+    "asearch_stock_videos",
     # Code execution
     "code_execution_python",
     # All tools lists
