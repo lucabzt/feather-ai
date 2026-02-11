@@ -20,19 +20,17 @@ class AIResponse:
         else:
             return f"AIResponse(content={self.content})"
 
-class ToolCall:
-    def __init__(self, name: str, args: dict, id: str, **kwargs):
-        self.name = name
-        self.args = args
-        self.id = id
+class ToolCall(BaseModel):
+    name: str
+    args: dict
+    id: str = id
 
     def __repr__(self):
         return f"ToolCall(name={self.name}, args={self.args}, id={self.id})"
 
-class ToolResponse:
-    def __init__(self, content: str, tool_call_id: str):
-        self.content = content
-        self.tool_call_id = tool_call_id
+class ToolResponse(BaseModel):
+    content: str
+    tool_call_id: str
 
     def __repr__(self):
         return f"ToolResponse(content={self.content}, tool_call_id={self.tool_call_id})"

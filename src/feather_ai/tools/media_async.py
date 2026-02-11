@@ -23,16 +23,19 @@ import certifi
 REQUESTS_TIMEOUT = 15
 
 
+def _create_ssl_context() -> ssl.SSLContext:
+    """Create an SSL context using certifi certificates."""
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 async def _make_pexels_request(
-        session: aiohttp.ClientSession,
-        url: str,
-        params: Optional[Dict[str, Any]] = None
+    url: str,
+    params: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Internal function to make authenticated requests to Pexels API.
 
     Args:
-        session: The aiohttp client session to use
         url: The Pexels API endpoint URL
         params: Query parameters for the request
 
@@ -51,26 +54,24 @@ async def _make_pexels_request(
         "Authorization": PEXELS_API_KEY,
     }
 
-    async with session.get(url, headers=headers, params=params) as response:
-        response.raise_for_status()
-        return await response.json()
+    ssl_context = _create_ssl_context()
+    connector = aiohttp.TCPConnector(ssl=ssl_context)
+    timeout = aiohttp.ClientTimeout(total=REQUESTS_TIMEOUT)
 
-
-def _create_ssl_context() -> ssl.SSLContext:
-    """Create an SSL context using certifi certificates."""
-    ssl_context = ssl.create_default_context(cafile=certifi.where())
-    return ssl_context
+    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+        async with session.get(url, headers=headers, params=params) as response:
+            response.raise_for_status()
+            return await response.json()
 
 
 async def asearch_stock_images(
-        query: str,
-        per_page: int = 10,
-        page: int = 1,
-        orientation: Optional[str] = None,
-        size: Optional[str] = None,
-        color: Optional[str] = None,
-        locale: Optional[str] = None,
-        session: Optional[aiohttp.ClientSession] = None
+    query: str,
+    per_page: int = 10,
+    page: int = 1,
+    orientation: Optional[str] = None,
+    size: Optional[str] = None,
+    color: Optional[str] = None,
+    locale: Optional[str] = None
 ) -> str:
     """
     Search for photos on Pexels.
@@ -83,7 +84,6 @@ async def asearch_stock_images(
         size: Image size - 'large', 'medium', or 'small'
         color: Color filter - color name or hex code (e.g., 'red' or '#ff0000')
         locale: Locale code (e.g., 'en-US')
-        session: Optional aiohttp session to reuse (creates one if not provided)
 
     Returns:
         String containing all search results with url, alt, width, height
@@ -104,40 +104,29 @@ async def asearch_stock_images(
     if locale:
         params["locale"] = locale
 
-    def curate_str_photo(photo: Dict[str, Any], idx: int) -> str:
+    response = await _make_pexels_request(url, params)
+    photos = response["photos"]
+
+    def curate_str_photo(photo: Dict[str, Any]) -> str:
         return f"""
-        # Photo {idx}:
-        url: {photo["src"]["original"]}
-        alt: {photo["alt"][:-1]})
-        size: ({photo["width"]}, {photo["height"]})
-        ---
-        """
+---
+url: {photo["src"]["original"]}
+alt: {photo["alt"][:-1]})
+size: ({photo["width"]}, {photo["height"]})
+---
+"""
 
-    if session is not None:
-        response = await _make_pexels_request(session, url, params)
-        photos = response["photos"]
-        photos_str = [curate_str_photo(photo, idx) for idx, photo in enumerate(photos)]
-        return "".join(photos_str)
-
-    ssl_context = _create_ssl_context()
-    connector = aiohttp.TCPConnector(ssl=ssl_context)
-    timeout = aiohttp.ClientTimeout(total=REQUESTS_TIMEOUT)
-
-    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as new_session:
-        response = await _make_pexels_request(new_session, url, params)
-        photos = response["photos"]
-        photos_str = [curate_str_photo(photo, idx) for idx, photo in enumerate(photos)]
-        return "".join(photos_str)
+    photos_str = [curate_str_photo(photo) for photo in photos]
+    return "".join(photos_str)
 
 
 async def asearch_stock_videos(
-        query: str,
-        per_page: int = 7,
-        page: int = 1,
-        orientation: Optional[str] = None,
-        size: Optional[str] = None,
-        locale: Optional[str] = None,
-        session: Optional[aiohttp.ClientSession] = None
+    query: str,
+    per_page: int = 7,
+    page: int = 1,
+    orientation: Optional[str] = None,
+    size: Optional[str] = None,
+    locale: Optional[str] = None
 ) -> str:
     """
     Search for videos on Pexels.
@@ -149,7 +138,6 @@ async def asearch_stock_videos(
         orientation: Video orientation - 'landscape', 'portrait', or 'square'
         size: Video size - 'large', 'medium', or 'small'
         locale: Locale code (e.g., 'en-US')
-        session: Optional aiohttp session to reuse (creates one if not provided)
 
     Returns:
         All search results with identifier and urls
@@ -168,44 +156,38 @@ async def asearch_stock_videos(
     if locale:
         params["locale"] = locale
 
+    response = await _make_pexels_request(url, params)
+
     def curate_str_video(video: Dict[str, Any], idx: int) -> str:
         return f"""
-        # Video {idx}:
-        Identifier: {video["url"].split("/")[-2]}
-        Available urls: {[v["link"] for v in video["video_files"]]}
-        """
+# Video {idx}:
+Identifier: {video["url"].split("/")[-2]}
+Available urls: {[v["link"] for v in video["video_files"]]}
+"""
 
-    if session is not None:
-        response = await _make_pexels_request(session, url, params)
-        video_strings = [curate_str_video(video, idx) for idx, video in enumerate(response["videos"])]
-        return "".join(video_strings)
-
-    ssl_context = _create_ssl_context()
-    connector = aiohttp.TCPConnector(ssl=ssl_context)
-    timeout = aiohttp.ClientTimeout(total=REQUESTS_TIMEOUT)
-
-    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as new_session:
-        response = await _make_pexels_request(new_session, url, params)
-        video_strings = [curate_str_video(video, idx) for idx, video in enumerate(response["videos"])]
-        return "".join(video_strings)
+    video_strings = [curate_str_video(video, idx) for idx, video in enumerate(response["videos"])]
+    return "".join(video_strings)
 
 
-async def create_pexels_session() -> aiohttp.ClientSession:
-    """
-    Create a reusable aiohttp session configured for Pexels API.
+async def main():
+    """Example usage demonstrating concurrent searches."""
+    from dotenv import load_dotenv
+    load_dotenv()
 
-    Use this when making multiple requests to avoid connection overhead.
-    Remember to close the session when done.
+    # Simple usage
+    result = await asearch_stock_videos("Halong Bay")
+    print(result)
 
-    Returns:
-        Configured aiohttp ClientSession
+    # Run searches concurrently
+    images_task = asearch_stock_images("mountain sunset")
+    videos_task = asearch_stock_videos("ocean waves")
 
-    Example:
-        async with await create_pexels_session() as session:
-            images = await search_stock_images("nature", session=session)
-            videos = await search_stock_videos("ocean", session=session)
-    """
-    ssl_context = _create_ssl_context()
-    connector = aiohttp.TCPConnector(ssl=ssl_context)
-    timeout = aiohttp.ClientTimeout(total=REQUESTS_TIMEOUT)
-    return aiohttp.ClientSession(connector=connector, timeout=timeout)
+    images, videos = await asyncio.gather(images_task, videos_task)
+    print("=== Images ===")
+    print(images)
+    print("=== Videos ===")
+    print(videos)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

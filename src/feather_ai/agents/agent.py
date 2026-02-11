@@ -3,13 +3,16 @@ This file contains the main Agent class provided by feather_ai.
 The AIAgent class can be used to create intelligent agents that can perform various tasks.
 Its main advantage over other agentic AI frameworks is its simplicity and ease of use.
 """
+import asyncio
 import base64
+import time
 from abc import ABC
 from typing import Optional, List, Callable, Any, Type, AsyncGenerator, Tuple
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, ToolMessage
 from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
 from langchain_google_genai import Modality
 from pydantic import BaseModel
 
@@ -22,11 +25,14 @@ from ..prompt import Prompt
 from ..internal_utils._tools import make_tool, react_agent_with_tooling, \
     async_react_agent_with_tooling, stream_react_agent_with_tooling
 
+# Exceptions that indicate transient network/server errors worth retrying
+_RETRYABLE_EXCEPTIONS = (ConnectionError, TimeoutError, OSError)
+
 
 class AIAgent(BaseAgent):
     """
     The AIAgent class represents an intelligent AI agent that can perform tool calling and give structured output.
-    
+
     Attributes:
         model (str): The LLM used by the agent.
     """
@@ -34,7 +40,7 @@ class AIAgent(BaseAgent):
     def __init__(self,
                  model: str,
                  instructions: Optional[str] = None,
-                 tools: Optional[List[Callable[..., Any]]] = None,
+                 tools: Optional[List[Callable[..., Any]] | List[BaseTool]] = None,
                  output_schema: Optional[Type[BaseModel]] = None,
                  ):
         """
@@ -65,9 +71,12 @@ class AIAgent(BaseAgent):
             else:
                 self.llm: BaseChatModel = get_provider(model)[0].bind_tools(self.tools) # type: ignore
 
-    def run(self, prompt: Prompt | str | List[BaseMessage]):
+    def run(self, prompt: Prompt | str | List[BaseMessage], retries: int = 0, **kwargs):
         """
         Standard run method for the AIAgent class.
+        Args:
+            prompt: The prompt to process.
+            retries: Number of retries on network/server errors. Default is 0.
         Returns:
             AgentResponse object containing the agent's response.
         """
@@ -83,29 +92,38 @@ class AIAgent(BaseAgent):
         else:
             messages.extend(prompt)
 
-        tool_calls = None
-        ## Call tools if any
-        if hasattr(self, "tools"):
-            response, tool_calls = react_agent_with_tooling(self.llm, self.tools, messages, self.structured_output)
-        elif self.image_generator:
-            response = self.llm.invoke(
-                messages,
-                response_modalities=[Modality.TEXT, Modality.IMAGE],
-            )
-        else:
-            response = self.llm.invoke(messages)
+        for attempt in range(retries + 1):
+            try:
+                tool_calls = None
+                ## Call tools if any
+                if hasattr(self, "tools"):
+                    response, tool_calls = react_agent_with_tooling(self.llm, self.tools, messages, self.structured_output, **kwargs)
+                elif self.image_generator:
+                    response = self.llm.invoke(
+                        messages,
+                        response_modalities=[Modality.TEXT, Modality.IMAGE],
+                    )
+                else:
+                    response = self.llm.invoke(messages)
 
-        ## Check for structured output
-        if self.structured_output:
-            return AIResponse(response, tool_calls, messages)
-        elif self.image_generator:
-            return AIResponse(base64.b64decode(_get_image_base64(response.content)), tool_calls, messages)
-        else:
-            return AIResponse(response.content, tool_calls, messages)
+                ## Check for structured output
+                if self.structured_output:
+                    return AIResponse(response, tool_calls, messages)
+                elif self.image_generator:
+                    return AIResponse(base64.b64decode(_get_image_base64(response.content)), tool_calls, messages)
+                else:
+                    return AIResponse(response.content, tool_calls, messages)
+            except _RETRYABLE_EXCEPTIONS:
+                if attempt == retries:
+                    raise
+                time.sleep(1)
 
-    async def arun(self, prompt: Prompt | str | List[BaseMessage]):
+    async def arun(self, prompt: Prompt | str | List[BaseMessage], retries: int = 0, **kwargs):
         """
         Async run method for the AIAgent class.
+        Args:
+            prompt: The prompt to process.
+            retries: Number of retries on network/server errors. Default is 0.
         Returns:
             AgentResponse object containing the agent's response.
         """
@@ -121,32 +139,39 @@ class AIAgent(BaseAgent):
         else:
             messages.extend(prompt)
 
-        tool_calls = None
-        ## Call tools if any
-        if hasattr(self, "tools"):
-            response, tool_calls = await async_react_agent_with_tooling(self.llm, self.tools, messages, self.structured_output)
-        elif self.image_generator:
-            response = await self.llm.ainvoke(
-                messages,
-                response_modalities=[Modality.TEXT, Modality.IMAGE],
-            )
-        else:
-            response = await self.llm.ainvoke(messages)
+        for attempt in range(retries + 1):
+            try:
+                tool_calls = None
+                ## Call tools if any
+                if hasattr(self, "tools"):
+                    response, tool_calls = await async_react_agent_with_tooling(self.llm, self.tools, messages, self.structured_output, **kwargs)
+                elif self.image_generator:
+                    response = await self.llm.ainvoke(
+                        messages,
+                        response_modalities=[Modality.TEXT, Modality.IMAGE],
+                    )
+                else:
+                    response = await self.llm.ainvoke(messages)
 
-        ## Check for structured output
-        if self.structured_output:
-            return AIResponse(response, tool_calls, messages)
-        elif self.image_generator:
-            return AIResponse(base64.b64decode(_get_image_base64(response)), tool_calls, messages)
-        else:
-            return AIResponse(response.content, tool_calls, messages)
+                ## Check for structured output
+                if self.structured_output:
+                    return AIResponse(response, tool_calls, messages)
+                elif self.image_generator:
+                    return AIResponse(base64.b64decode(_get_image_base64(response)), tool_calls, messages)
+                else:
+                    return AIResponse(response.content, tool_calls, messages)
+            except _RETRYABLE_EXCEPTIONS:
+                if attempt == retries:
+                    raise
+                await asyncio.sleep(1)
 
-    async def stream(self, prompt: Prompt | str | List[BaseMessage], stream_mode: Optional[str] = "tokens") -> AsyncGenerator[Tuple[str, str | ToolCall | ToolResponse | BaseModel | bytes | AIResponse], None]:
+    async def stream(self, prompt: Prompt | str | List[BaseMessage], stream_mode: Optional[str] = "tokens", retries: int = 0, **kwargs) -> AsyncGenerator[Tuple[str, str | ToolCall | ToolResponse | BaseModel | bytes | AIResponse], None]:
         """
         Token by token streaming of the response from the agent.
         Args:
             prompt (Prompt | str): The prompt to process.
             stream_mode: "tokens" - returns tokens one by one, "messages" - streams messages e.g. tool calls but not tokenwise
+            retries: Number of retries on network/server errors. Default is 0.
         Returns:
             streams back one of the following tuples:
             ("tool_call", ToolCall) if the model made a tool call
@@ -169,17 +194,24 @@ class AIAgent(BaseAgent):
         else:
             messages.extend(prompt)
 
-        ## Call tools if any
-        if hasattr(self, "tools"):
-            async for chunk in stream_react_agent_with_tooling(self.llm, self.tools, messages, stream_mode=stream_mode, structured_output=self.structured_output):
-                yield chunk
-        else:
-            if self.image_generator:
-                response = await self.llm.ainvoke(messages, response_modalities=[Modality.TEXT, Modality.IMAGE])
-                yield "image", base64.b64decode(_get_image_base64(response))
-                return
-            if stream_mode == "messages":
-                yield "response", await self.arun(prompt)
-                return
-            async for token in self.llm.astream(messages):
-                yield "token", token.content
+        for attempt in range(retries + 1):
+            try:
+                ## Call tools if any
+                if hasattr(self, "tools"):
+                    async for chunk in stream_react_agent_with_tooling(self.llm, self.tools, messages, stream_mode=stream_mode, structured_output=self.structured_output, **kwargs):
+                        yield chunk
+                else:
+                    if self.image_generator:
+                        response = await self.llm.ainvoke(messages, response_modalities=[Modality.TEXT, Modality.IMAGE])
+                        yield "image", base64.b64decode(_get_image_base64(response))
+                        return
+                    if stream_mode == "messages":
+                        yield "response", await self.arun(prompt)
+                        return
+                    async for token in self.llm.astream(messages):
+                        yield "token", token.content
+                return  # Success, exit retry loop
+            except _RETRYABLE_EXCEPTIONS:
+                if attempt == retries:
+                    raise
+                await asyncio.sleep(1)

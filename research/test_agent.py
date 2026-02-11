@@ -10,23 +10,26 @@ import asyncio
 import os
 import time
 from pprint import pprint
+from typing import Annotated
 
 from dotenv import load_dotenv
+from langchain_core.tools import InjectedToolArg, tool
 from pydantic import BaseModel, Field
 import logging
 
-from src.feather_ai.agents.loop_agent import LoopAgent
-from src.feather_ai.rag_processors.fast_processor import chunk_documents
-from src.feather_ai.tools import search_stock_images
-from src.feather_ai.tools.code_execution import code_execution_python
-from src.feather_ai.tools.web import google_search, web_tools, web_tools_async
-from src.feather_ai.types import EOS
+from feather_ai.tools.documents import get_document_content
+from feather_ai.agents.loop_agent import LoopAgent
+from feather_ai.rag_processors.fast_processor import chunk_documents
+from feather_ai.tools import search_stock_images
+from feather_ai.tools.code_execution import code_execution_python
+from feather_ai.tools.web import google_search, web_tools, web_tools_async
+from feather_ai.types import EOS
 
 logging.basicConfig(level=logging.ERROR)
 
-from src.feather_ai import AIAgent, AIResponse, Document
-from src.feather_ai.prompt import Prompt
-from src.feather_ai.utils import load_instruction_from_file
+from feather_ai import AIAgent, AIResponse, Document
+from feather_ai.prompt import Prompt
+from feather_ai.utils import load_instruction_from_file
 
 load_dotenv()
 
@@ -41,6 +44,13 @@ def get_weather(location: str):
     return f"The weather in {location} is rainy today."
 async def aget_weather(location: str):
     return f"The weather in {location} is rainy today."
+@tool
+def get_weather_injected(
+        location: str,
+        degrees: Annotated[int, InjectedToolArg],
+):
+    """ get the current weather for the specified location """
+    return f"In {location} it currently has {degrees} degrees with strong rain."
 
 def test_base_agent():
     question = "What is the capital of France?"
@@ -140,7 +150,7 @@ def test_complex_tools():
     pprint(resp.input_messages)
 
 async def test_async_complex_tools():
-    agent = AIAgent("gemini-2.5-flash-lite", tools=[code_execution_python, *web_tools_async])
+    agent = AIAgent("deepseek-chat", tools=[code_execution_python, *web_tools_async])
     resp = await agent.arun(""
     "Please scrape this base url: https://docs.langchain.com/oss/python/langchain"
                             "and this: https://google.github.io/adk-docs/ for a code execution tool in both frameworks. Give me an overview which one is easier to use.")
@@ -149,7 +159,7 @@ async def test_async_complex_tools():
     pprint(resp.input_messages)
 
 async def test_streaming():
-    agent = AIAgent("gpt-4o", tools=[*web_tools_async])
+    agent = AIAgent("claude-haiku-4-5", tools=[*web_tools_async])
     chunks = []
     tool_calls = []
     max_length = 40
@@ -214,6 +224,16 @@ async def test_chunker():
     print(f"Document Chunking took {end - start} seconds")
     print(scraped_results)
 
+async def test_injected_tool():
+    agent = AIAgent("claude-haiku-4-5", tools=[get_weather_injected])
+    response = agent.run("whats the weather on lombok today?", degrees=27)
+    print(response)
+
+async def test_document_tool():
+    agent = AIAgent("mistral-small", tools=[get_document_content])
+    doc = Document.from_path("./rag_docling/attention.pdf")
+    response = await agent.arun("Tell me what it says on attention.pdf on page 6", documents=[doc])
+    print(response)
 
 if __name__ == "__main__":
-    asyncio.run(test_chunker())
+    asyncio.run(test_document_tool())

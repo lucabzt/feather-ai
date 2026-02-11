@@ -2,8 +2,12 @@
 A loop Agent that prompts the model again and again until either a specific condition is met or the maximum number of iterations is reached.
 """
 import inspect
-from typing import Callable, Optional, Tuple, Any, Dict, Coroutine
+from typing import Callable, Optional, Tuple, Any, Dict, Coroutine, List
+
+from langchain_core.messages import BaseMessage
+
 from .base_agent import BaseAgent
+from ..prompt import Prompt
 
 
 class LoopAgent(BaseAgent):
@@ -64,7 +68,7 @@ class LoopAgent(BaseAgent):
 
         return current_response
 
-    async def arun(self, prompt):
+    async def arun(self, prompt: str | Prompt | List[BaseMessage]):
         """
         Simple arun method that loops the agent until the stopping condition is met.
         Args:
@@ -98,7 +102,7 @@ class LoopAgent(BaseAgent):
 
         return current_response
 
-    async def stream(self, prompt, **kwargs):
+    async def stream(self, prompt: str | Prompt | List[BaseMessage], **kwargs):
         """
         Stream back the responses from the agent.
         No token by token streaming but instead a stream of the response every loop iteration.

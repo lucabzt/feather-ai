@@ -104,11 +104,11 @@ def search_stock_images(
 
     def curate_str_photo(photo, idx):
         str_response = f"""
-        # Photo {idx}:
-        url: {photo["src"]["original"]}
-        alt: {photo["alt"][:-1]})
-        size: ({photo["width"]}, {photo["height"]})
-        ---
+---
+url: {photo["src"]["original"]}
+alt: {photo["alt"][:-1]})
+size: ({photo["width"]}, {photo["height"]})
+---
         """
         return str_response
 
