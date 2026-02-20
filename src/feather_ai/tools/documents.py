@@ -82,7 +82,7 @@ async def get_images_in_pages(
 
 
 @tool
-async def get_document_content(
+async def get_pdf_pages(
     file_name: str,
     start_page: Optional[int],
     end_page: Optional[int],
@@ -121,4 +121,57 @@ async def get_document_content(
         text += f"Page {page_number + 1}: {page.get_text()}\n"
 
     return text
+
+@tool
+async def get_document_chars(
+    file_name: str,
+    start_char: Optional[int],
+    end_char: Optional[int],
+    documents: Annotated[List[Document], InjectedToolArg],
+) -> str:
+    """
+    Tool for retrieving character ranges from text-based documents.
+    Args:
+        file_name: The name of the document you want to retrieve content from.
+        start_char: The starting character index (0-based, inclusive).
+        end_char: The ending character index (0-based, exclusive).
+    Returns:
+        A string representing the selected character range of the document.
+    """
+    relevant_document = next(
+        (doc for doc in documents if doc.filename == file_name),
+        None
+    )
+
+    # Error Handling
+    if relevant_document is None:
+        return "Error: Document not found. Please use the correct file_name."
+
+    allowed_types = {"text/plain", "application/json", "text/csv"}
+    if relevant_document.mime_type not in allowed_types:
+        return (
+            "Error: Unsupported document type. "
+            "Supported types are text/plain, application/json, text/csv."
+        )
+
+    try:
+        content = relevant_document.content.decode("utf-8")
+    except Exception:
+        return "Error: Unable to decode document content as UTF-8 text."
+
+    # Handle character bounds
+    start_char = start_char if start_char is not None else 0
+    end_char = end_char if end_char is not None else len(content)
+
+    # Validate bounds
+    if start_char < 0 or end_char < 0:
+        return "Error: start_char and end_char must be non-negative."
+
+    if start_char > end_char:
+        return "Error: start_char cannot be greater than end_char."
+
+    # Clamp end_char to document length
+    end_char = min(end_char, len(content))
+
+    return content[start_char:end_char]
 

@@ -174,6 +174,7 @@ async def stream_structured_output_with_tooling(
         has_tool_calls = False
 
         async for chunk in llm.astream(messages):
+            print("THIS COMES FROM FEATHERAI! ", chunk)
             chunks.append(chunk)
 
             # Detect tool calls early
@@ -192,6 +193,12 @@ async def stream_structured_output_with_tooling(
                 extracted_objects.extend(objects)
                 for obj in objects:
                     yield "structured_response", obj
+
+        print("STREAM IS OVER FOR NOW")
+
+        # Handle empty response - raise error to propagate to caller
+        if not chunks:
+            raise RuntimeError("LLM returned empty response (no chunks received)")
 
         # Reconstruct full message
         response = chunks[0]
@@ -264,7 +271,7 @@ class StructuredStreamingAgent:
             self.tool_llm: BaseChatModel | Runnable = self.llm.bind_tools(self.tools)
         self.schema_instructions = generate_schema_instructions(Output)
 
-    async def stream(self, prompt: Prompt | str | List[BaseMessage], retries: int = 0) -> AsyncGenerator[Tuple[str, Any], None]:
+    async def stream(self, prompt: Prompt | str | List[BaseMessage], retries: int = 2) -> AsyncGenerator[Tuple[str, Any], None]:
         """
         Stream structured output from the agent.
         Args:
@@ -313,7 +320,7 @@ async def main():
     agent = StructuredStreamingAgent(
         model="gemini-3-flash-preview",
         output_schema=QuestionAnswerPair,
-        instructions="return min. 20 qa pairs about a learning topic. ground in google search",
+        instructions="return min. 20 qa pairs about charlie kirk. ground in google search",
         tools=web_tools_async
     )
 
