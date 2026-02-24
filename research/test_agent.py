@@ -17,7 +17,8 @@ from langchain_core.tools import InjectedToolArg, tool
 from pydantic import BaseModel, Field
 import logging
 
-from feather_ai.tools.documents import get_document_content
+from feather_ai.agents import StructuredStreamingAgent
+from feather_ai.tools.documents import get_pdf_pages, get_document_chars, summarize_pdf_pages
 from feather_ai.agents.loop_agent import LoopAgent
 from feather_ai.rag_processors.fast_processor import chunk_documents
 from feather_ai.tools import search_stock_images
@@ -230,10 +231,40 @@ async def test_injected_tool():
     print(response)
 
 async def test_document_tool():
-    agent = AIAgent("mistral-small", tools=[get_document_content])
+    agent = AIAgent("mistral-small", tools=[get_pdf_pages])
     doc = Document.from_path("./rag_docling/attention.pdf")
     response = await agent.arun("Tell me what it says on attention.pdf on page 6", documents=[doc])
     print(response)
 
+async def test_structured_streaming():
+    # --- Setup Schema ---
+    class QuestionAnswerPair(BaseModel):
+        question: str
+        answer: str
+
+    agent = StructuredStreamingAgent(
+        model="gemini-3-flash-preview",
+        output_schema=QuestionAnswerPair,
+        instructions="return min. 5 qa pairs about the provided documents. ground in google search",
+        tools=[*web_tools_async, get_pdf_pages, get_document_chars]
+    )
+
+    docs = [Document.from_path("./rag_docling/attention.pdf"),
+            Document.from_path("./rag_docling/output.json")]
+    async for chunk in agent.stream("the documents are: attention.pdf, 9 pages and output.json, 201 chars",
+                                    documents=docs):
+        print(chunk)
+
+async def test_summary():
+    sum_agent = AIAgent("mistral-small", instructions=
+    "Please summarize the topics of the given pages from a pdf document."
+    "Group pages that belong together e.g. "
+    "P1-4 Introduction"
+    "P5-15 Topic 1")
+    docs = [Document.from_path("./rag_docling/attention.pdf")]
+    agent = AIAgent("mistral-small", tools=[summarize_pdf_pages])
+    async for event in agent.stream("Please summarize the topics of attention.pdf (has 6 pages) using the summary tool", stream_mode="messages", summary_agent=sum_agent, documents=docs):
+        print(event)
+
 if __name__ == "__main__":
-    asyncio.run(test_document_tool())
+    asyncio.run(test_summary())

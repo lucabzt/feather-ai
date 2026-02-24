@@ -19,7 +19,7 @@ from .web import (
 from .code_execution import code_execution_python
 from .media import search_stock_images, search_stock_videos
 from .media_async import asearch_stock_images ,asearch_stock_videos
-from .documents import get_pdf_pages, get_document_chars
+from .documents import get_pdf_pages, get_document_chars, summarize_pdf_pages
 
 # Sync tools list
 all_tools = [
@@ -58,4 +58,8 @@ __all__ = [
     # All tools lists
     "all_tools",
     "all_tools_async",
+    # Document tools
+    "get_pdf_pages",
+    "get_document_chars",
+    "summarize_pdf_pages",
 ]

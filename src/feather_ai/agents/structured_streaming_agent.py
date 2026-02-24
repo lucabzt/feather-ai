@@ -28,18 +28,15 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel
-
-from feather_ai.internal_utils._tools import make_tool, async_execute_tool
-from feather_ai.prompt import Prompt
-from feather_ai.internal_utils._provider import get_provider
+from ..internal_utils._tools import make_tool, async_execute_tool
+from ..prompt import Prompt
+from ..internal_utils._provider import get_provider
 
 import json
 from typing import List, Type, TypeVar, Any
 from pydantic import BaseModel, ValidationError
 
-from feather_ai.tools import web_tools_async
-from feather_ai.types.response import ToolResponse, ToolCall
+from ..types.response import ToolResponse, ToolCall
 
 # Generic type variable to allow the function to return the specific model class passed in
 T = TypeVar("T", bound=BaseModel)
@@ -152,6 +149,7 @@ async def stream_structured_output_with_tooling(
         tools: List[BaseTool],
         messages: List[BaseMessage],
         schema: Type[BaseModel],
+        **kwargs,
 ) -> AsyncGenerator[Tuple[str, str | ToolResponse | ToolCall | Any], None]:
     """
     Complex function for streaming the responses from agents that can call tools in a meaningful way
@@ -174,7 +172,6 @@ async def stream_structured_output_with_tooling(
         has_tool_calls = False
 
         async for chunk in llm.astream(messages):
-            print("THIS COMES FROM FEATHERAI! ", chunk)
             chunks.append(chunk)
 
             # Detect tool calls early
@@ -194,8 +191,6 @@ async def stream_structured_output_with_tooling(
                 for obj in objects:
                     yield "structured_response", obj
 
-        print("STREAM IS OVER FOR NOW")
-
         # Handle empty response - raise error to propagate to caller
         if not chunks:
             raise RuntimeError("LLM returned empty response (no chunks received)")
@@ -212,7 +207,7 @@ async def stream_structured_output_with_tooling(
                 yield "tool_call", ToolCall(**tool_call)
 
             # Execute tools and continue
-            tool_messages = await async_execute_tool(response, tools)
+            tool_messages = await async_execute_tool(response, tools, **kwargs)
 
             if not tool_messages:
                 return
@@ -271,7 +266,7 @@ class StructuredStreamingAgent:
             self.tool_llm: BaseChatModel | Runnable = self.llm.bind_tools(self.tools)
         self.schema_instructions = generate_schema_instructions(Output)
 
-    async def stream(self, prompt: Prompt | str | List[BaseMessage], retries: int = 2) -> AsyncGenerator[Tuple[str, Any], None]:
+    async def stream(self, prompt: Prompt | str | List[BaseMessage], retries: int = 2, **kwargs) -> AsyncGenerator[Tuple[str, Any], None]:
         """
         Stream structured output from the agent.
         Args:
@@ -294,7 +289,7 @@ class StructuredStreamingAgent:
         for attempt in range(retries + 1):
             try:
                 if hasattr(self, "tools"):
-                    async for chunk in stream_structured_output_with_tooling(self.tool_llm, self.tools, messages, self.schema):
+                    async for chunk in stream_structured_output_with_tooling(self.tool_llm, self.tools, messages, self.schema, **kwargs):
                         yield chunk
                 else:
                     chunks = []
@@ -310,24 +305,3 @@ class StructuredStreamingAgent:
                 if attempt == retries:
                     raise
                 await asyncio.sleep(1)
-
-async def main():
-    # --- Setup Schema ---
-    class QuestionAnswerPair(BaseModel):
-        question: str
-        answer: str
-
-    agent = StructuredStreamingAgent(
-        model="gemini-3-flash-preview",
-        output_schema=QuestionAnswerPair,
-        instructions="return min. 20 qa pairs about charlie kirk. ground in google search",
-        tools=web_tools_async
-    )
-
-    async for chunk in agent.stream("rainbows"):
-        print(chunk)
-
-if __name__ == "__main__":
-    from dotenv import load_dotenv
-    load_dotenv()
-    asyncio.run(main())
