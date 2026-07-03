@@ -10,7 +10,7 @@ from .document import Document
 from .prompt import Prompt
 from .utils import load_instruction_from_file
 from .internal_utils._exceptions import ModelNotSupportedException
-from .types.response import AIResponse
+from .types.response import AIResponse, UsageInfo
 
 __all__ = [
     "AIAgent",
@@ -19,4 +19,5 @@ __all__ = [
     "load_instruction_from_file",
     "ModelNotSupportedException",
     "AIResponse",
+    "UsageInfo",
 ]

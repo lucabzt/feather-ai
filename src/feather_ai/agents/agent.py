@@ -19,8 +19,9 @@ from pydantic import BaseModel
 from .base_agent import BaseAgent
 from ..internal_utils._image_gen import _get_image_base64
 from ..internal_utils._provider import get_provider
-from ..types.response import AIResponse, ToolCall, ToolResponse
+from ..types.response import AIResponse, ToolCall, ToolResponse, UsageInfo
 from ..internal_utils._structured_tool import get_respond_tool
+from ..internal_utils._usage import extract_usage
 from ..prompt import Prompt
 from ..internal_utils._tools import make_tool, react_agent_with_tooling, \
     async_react_agent_with_tooling, stream_react_agent_with_tooling
@@ -97,22 +98,24 @@ class AIAgent(BaseAgent):
                 tool_calls = None
                 ## Call tools if any
                 if hasattr(self, "tools"):
-                    response, tool_calls = react_agent_with_tooling(self.llm, self.tools, messages, self.structured_output, **kwargs)
+                    response, tool_calls, usage = react_agent_with_tooling(self.llm, self.tools, messages, self.structured_output, **kwargs)
                 elif self.image_generator:
                     response = self.llm.invoke(
                         messages,
                         response_modalities=[Modality.TEXT, Modality.IMAGE],
                     )
+                    usage = extract_usage(response, self.llm)
                 else:
                     response = self.llm.invoke(messages)
+                    usage = extract_usage(response, self.llm)
 
                 ## Check for structured output
                 if self.structured_output:
-                    return AIResponse(response, tool_calls, messages)
+                    return AIResponse(response, tool_calls, messages, usage=usage)
                 elif self.image_generator:
-                    return AIResponse(base64.b64decode(_get_image_base64(response.content)), tool_calls, messages)
+                    return AIResponse(base64.b64decode(_get_image_base64(response.content)), tool_calls, messages, usage=usage)
                 else:
-                    return AIResponse(response.content, tool_calls, messages)
+                    return AIResponse(response.content, tool_calls, messages, usage=usage)
             except _RETRYABLE_EXCEPTIONS:
                 if attempt == retries:
                     raise
@@ -144,22 +147,24 @@ class AIAgent(BaseAgent):
                 tool_calls = None
                 ## Call tools if any
                 if hasattr(self, "tools"):
-                    response, tool_calls = await async_react_agent_with_tooling(self.llm, self.tools, messages, self.structured_output, **kwargs)
+                    response, tool_calls, usage = await async_react_agent_with_tooling(self.llm, self.tools, messages, self.structured_output, **kwargs)
                 elif self.image_generator:
                     response = await self.llm.ainvoke(
                         messages,
                         response_modalities=[Modality.TEXT, Modality.IMAGE],
                     )
+                    usage = extract_usage(response, self.llm)
                 else:
                     response = await self.llm.ainvoke(messages)
+                    usage = extract_usage(response, self.llm)
 
                 ## Check for structured output
                 if self.structured_output:
-                    return AIResponse(response, tool_calls, messages)
+                    return AIResponse(response, tool_calls, messages, usage=usage)
                 elif self.image_generator:
-                    return AIResponse(base64.b64decode(_get_image_base64(response)), tool_calls, messages)
+                    return AIResponse(base64.b64decode(_get_image_base64(response)), tool_calls, messages, usage=usage)
                 else:
-                    return AIResponse(response.content, tool_calls, messages)
+                    return AIResponse(response.content, tool_calls, messages, usage=usage)
             except _RETRYABLE_EXCEPTIONS:
                 if attempt == retries:
                     raise
@@ -181,6 +186,7 @@ class AIAgent(BaseAgent):
             ("structured_response", YourStructuredClass) if structured_output is True
             ("image", bytes) if the model is an image generator
             ("response", AIResponse) if stream_mode is "messages" we return the entire response
+            ("usage", UsageInfo) token usage for each completed underlying LLM call (sum them to get the run total)
         """
         messages: List[BaseMessage] = [
             SystemMessage(content=self.system_instructions if self.system_instructions else ""),
@@ -204,12 +210,20 @@ class AIAgent(BaseAgent):
                     if self.image_generator:
                         response = await self.llm.ainvoke(messages, response_modalities=[Modality.TEXT, Modality.IMAGE])
                         yield "image", base64.b64decode(_get_image_base64(response))
+                        yield "usage", extract_usage(response, self.llm)
                         return
                     if stream_mode == "messages":
-                        yield "response", await self.arun(prompt)
+                        response = await self.arun(prompt)
+                        yield "response", response
+                        if response is not None and response.usage is not None:
+                            yield "usage", response.usage
                         return
+                    aggregated = None
                     async for token in self.llm.astream(messages):
+                        aggregated = token if aggregated is None else aggregated + token
                         yield "token", token.content
+                    # usage_metadata rides on the aggregated final chunk
+                    yield "usage", extract_usage(aggregated, self.llm)
                 return  # Success, exit retry loop
             except _RETRYABLE_EXCEPTIONS:
                 if attempt == retries:

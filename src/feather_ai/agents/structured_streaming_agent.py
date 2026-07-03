@@ -29,6 +29,7 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, To
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from ..internal_utils._tools import make_tool, async_execute_tool
+from ..internal_utils._usage import extract_usage
 from ..prompt import Prompt
 from ..internal_utils._provider import get_provider
 
@@ -200,6 +201,9 @@ async def stream_structured_output_with_tooling(
         for chunk in chunks[1:]:
             response = response + chunk
 
+        # Emit token usage for this completed underlying LLM call.
+        yield "usage", extract_usage(response, llm)
+
         # If we detected tool calls, yield the complete message
         if has_tool_calls:
             # If structured output, yield the structured response from the respond tool and return
@@ -294,12 +298,16 @@ class StructuredStreamingAgent:
                 else:
                     chunks = []
                     extracted_objects = []
+                    aggregated = None
                     async for chunk in self.llm.astream(messages):
+                        aggregated = chunk if aggregated is None else aggregated + chunk
                         chunks.append(chunk.content)
                         found_objects = extract_structured_objects(self.schema, len(extracted_objects), chunks)
                         extracted_objects.extend(found_objects)
                         for obj in found_objects:
                             yield "structured_response", obj
+                    # usage_metadata rides on the aggregated final chunk
+                    yield "usage", extract_usage(aggregated, self.llm)
                 return  # Success, exit retry loop
             except _RETRYABLE_EXCEPTIONS:
                 if attempt == retries:

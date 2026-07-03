@@ -6,11 +6,12 @@ Public API for the feather_ai types package.
 Provides types helpful for agents
 """
 
-from .response import AIResponse, ToolCall, EOS, ToolResponse
+from .response import AIResponse, ToolCall, EOS, ToolResponse, UsageInfo
 
 __all__ = [
     "AIResponse",
     "ToolCall",
     "EOS",
     "ToolResponse",
+    "UsageInfo",
 ]

@@ -8,6 +8,20 @@ from langchain_core.messages import BaseMessage
 
 from .base_agent import BaseAgent
 from ..prompt import Prompt
+from ..types.response import UsageInfo
+
+
+def _accumulate_usage(total, response):
+    """
+    Add ``response.usage`` into the running ``total`` and write the running total
+    back onto the response so whichever response is returned carries the usage
+    aggregated across every loop iteration so far. Returns the new running total.
+    """
+    if response is None or getattr(response, "usage", None) is None:
+        return total
+    total = response.usage if total is None else total + response.usage
+    response.usage = total
+    return total
 
 
 class LoopAgent(BaseAgent):
@@ -48,9 +62,11 @@ class LoopAgent(BaseAgent):
         """
         current_prompt = prompt
         current_response = None
+        total_usage = None
         for i in range(self.max_iterations):
             # get current response from the agent
             current_response = self.agent.run(current_prompt)
+            total_usage = _accumulate_usage(total_usage, current_response)
 
             stop_response = self.stop_or_proceed({"prompt": current_prompt, "response": current_response, "iteration": i})
             # if stop_response returned only a bool
@@ -79,9 +95,11 @@ class LoopAgent(BaseAgent):
         """
         current_prompt = prompt
         current_response = None
+        total_usage = None
         for i in range(self.max_iterations):
             # get current response from the agent
             current_response = await self.agent.arun(current_prompt)
+            total_usage = _accumulate_usage(total_usage, current_response)
 
             stop_response = self.stop_or_proceed(
                 {"prompt": current_prompt, "response": current_response, "iteration": i}) \

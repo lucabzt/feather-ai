@@ -12,12 +12,13 @@ from pydantic import create_model, BaseModel
 import inspect
 import logging
 
-from ..types.response import ToolCall, ToolResponse
+from ..types.response import ToolCall, ToolResponse, UsageInfo
 from ..types.response import EOS
 
 logger = logging.getLogger(__name__)
 
 from ._tracing import ToolTrace, get_tool_trace_from_langchain
+from ._usage import extract_usage
 
 
 def _get_injected_arg_names(tool: BaseTool) -> set[str]:
@@ -235,7 +236,7 @@ async def async_react_agent_with_tooling(
         messages: List[BaseMessage],
         structured_output: bool = False,
         **kwargs
-) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace]]:
+) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace], UsageInfo]:
     """
     Agent that can call tools in multiple rounds.
     Args:
@@ -245,11 +246,14 @@ async def async_react_agent_with_tooling(
         structured_output: optional flag to indicate if the agent should return structured output
 
     Returns:
-
+        Tuple of (response, tool_calls, usage) where usage aggregates token usage
+        across every LLM invocation made in the loop.
     """
     tool_calls = []
+    usage = UsageInfo()
     while True:
         response = await llm.ainvoke(messages)
+        usage = usage + extract_usage(response, llm)
 
         # sorry for this hack, would not be necessary if langchain supported tool calls with structured output
         if structured_output and hasattr(response, 'tool_calls') and response.tool_calls:
@@ -258,16 +262,16 @@ async def async_react_agent_with_tooling(
                     tool_args = tool_call['args']
                     for tool in tools:
                         if tool.name == 'respond':
-                            return tool.run(tool_args), tool_calls
+                            return tool.run(tool_args), tool_calls, usage
 
         tool_messages = await async_execute_tool(response, tools, **kwargs)
         tool_calls.extend(get_tool_trace_from_langchain(response, tool_messages))
         if not tool_messages:
             if response.content:
-                return response, tool_calls
+                return response, tool_calls, usage
             else:
                 response.content = messages[-1].content
-                return response, tool_calls
+                return response, tool_calls, usage
         messages.extend(tool_messages)
 
 def react_agent_with_tooling(
@@ -276,7 +280,7 @@ def react_agent_with_tooling(
         messages: List[BaseMessage],
         structured_output: bool = False,
         **kwargs
-) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace]]:
+) -> Tuple[AIMessage | Type[BaseModel], List[ToolTrace], UsageInfo]:
     """
     Agent that can call tools in multiple rounds.
     Args:
@@ -286,11 +290,14 @@ def react_agent_with_tooling(
         structured_output: optional flag to indicate if the agent should return structured output
 
     Returns:
-
+        Tuple of (response, tool_calls, usage) where usage aggregates token usage
+        across every LLM invocation made in the loop.
     """
     tool_calls = []
+    usage = UsageInfo()
     while True:
         response = llm.invoke(messages)
+        usage = usage + extract_usage(response, llm)
 
         # sorry for this hack, would not be necessary if langchain supported tool calls with structured output
         if structured_output and hasattr(response, 'tool_calls') and response.tool_calls:
@@ -299,16 +306,16 @@ def react_agent_with_tooling(
                     tool_args = tool_call['args']
                     for tool in tools:
                         if tool.name == 'respond':
-                            return tool.run(tool_args), tool_calls
+                            return tool.run(tool_args), tool_calls, usage
 
         tool_messages = execute_tool(response, tools, **kwargs)
         tool_calls.extend(get_tool_trace_from_langchain(response, tool_messages))
         if not tool_messages:
             if response.content:
-                return response, tool_calls
+                return response, tool_calls, usage
             else:
                 response.content = messages[-1].content
-                return response, tool_calls
+                return response, tool_calls, usage
         messages.extend(tool_messages)
 
 
@@ -360,9 +367,13 @@ async def stream_react_agent_with_tooling(
             yield "token", EOS
 
         # Reconstruct full message
-        response = chunks[0]
+        response = chunks[0] if chunks else None
         for chunk in chunks[1:]:
             response = response + chunk
+
+        # Emit token usage for this completed underlying LLM call.
+        # Aggregated across chunks, usage_metadata rides on the summed message.
+        yield "usage", extract_usage(response, llm)
 
         # If we detected tool calls, yield the complete message
         if has_tool_calls:

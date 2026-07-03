@@ -56,7 +56,15 @@ def get_provider(model: str) -> Tuple[BaseChatModel, str]:
     if not os.getenv(env_vars[provider_key]):
         raise ApiKeyMissingException(provider_key, env_vars[provider_key])
 
+    model_kwargs = {
+        "model": model,
+        "streaming": True,
+    }
+    # OpenAI-compatible chat models only attach token usage to streamed chunks
+    # when explicitly asked to. Gemini/Anthropic/Mistral attach it natively.
+    if provider_key in ("openai", "deepseek"):
+        model_kwargs["stream_usage"] = True
+
     return provider_mapping[provider_key](
-        model=model, # type: ignore
-        streaming=True,
+        **model_kwargs,  # type: ignore
     ), provider_key

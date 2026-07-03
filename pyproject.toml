@@ -1,6 +1,6 @@
 [project]
 name = "feather-ai-sdk"
-version = "0.1.22"
+version = "0.1.27"
 description = "The lightest Agentic AI Framework you'll ever see"
 authors = [{ name = "Luca Bozzetti" }]
 readme = "README.md"
