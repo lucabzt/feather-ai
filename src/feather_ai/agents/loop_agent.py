@@ -138,7 +138,7 @@ class LoopAgent(BaseAgent):
         current_response = None
         for i in range(self.max_iterations):
             # get current response from the agent
-            async for response in self.agent.stream(current_prompt, "messages"):
+            async for response in self.agent.stream(current_prompt, "messages", **kwargs):
                 if response[0] == "response":
                     current_response = response[1]
                 yield i, response[0], response[1]
