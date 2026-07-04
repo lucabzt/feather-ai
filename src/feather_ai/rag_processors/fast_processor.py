@@ -39,6 +39,12 @@ MIN_IMG_WIDTH = 150
 MIN_IMG_HEIGHT = 150
 MIN_IMG_BYTES = 2048
 
+# Image merging: raw embedded image objects within this many PDF points of each
+# other are treated as fragments of the same figure and rendered as one crop.
+IMAGE_MERGE_GAP = 12.0
+IMAGE_RENDER_ZOOM = 2.0
+IMAGE_JPEG_QUALITY = 90
+
 
 # --- Validation Functions ---
 
@@ -217,13 +223,75 @@ def _extract_via_ocr(
         return []
 
 
+def _bboxes_overlap_or_close(a: List[float], b: List[float], gap: float) -> bool:
+    """True if two axis-aligned boxes overlap or are within `gap` points of each other."""
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    return not (
+        ax1 + gap < bx0 or bx1 + gap < ax0 or
+        ay1 + gap < by0 or by1 + gap < ay0
+    )
+
+
+def _cluster_bboxes(bboxes: List[List[float]], gap: float) -> List[List[int]]:
+    """
+    Groups bbox indices into clusters of overlapping/adjacent boxes (union-find).
+
+    PDF producers frequently split a single visual figure into several raster
+    XObjects (soft masks, per-channel layers, tiled fragments) stacked on top of
+    or right next to each other. Treating each as its own image chunk floods
+    downstream consumers with dozens of near-duplicate entries for what is
+    visually one diagram, so these are merged before becoming chunks.
+    """
+    n = len(bboxes)
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(x: int, y: int) -> None:
+        rx, ry = find(x), find(y)
+        if rx != ry:
+            parent[rx] = ry
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if _bboxes_overlap_or_close(bboxes[i], bboxes[j], gap):
+                union(i, j)
+
+    clusters: Dict[int, List[int]] = {}
+    for i in range(n):
+        clusters.setdefault(find(i), []).append(i)
+
+    return list(clusters.values())
+
+
+def _union_bbox(bboxes: List[List[float]]) -> List[float]:
+    return [
+        min(b[0] for b in bboxes),
+        min(b[1] for b in bboxes),
+        max(b[2] for b in bboxes),
+        max(b[3] for b in bboxes),
+    ]
+
+
 def _extract_images(
         doc: pymupdf.Document,
         page: pymupdf.Page,
         page_num: int
 ) -> List[Dict[str, Any]]:
-    """Extracts meaningful images from a page."""
-    images = []
+    """
+    Extracts meaningful images from a page.
+
+    Raw embedded image objects that overlap or sit right next to each other are
+    merged into a single flattened crop rendered straight from the page, so one
+    visual figure yields one chunk regardless of how many raster XObjects the
+    PDF producer split it into.
+    """
+    candidate_bboxes: List[List[float]] = []
 
     for img_info in page.get_images(full=True):
         try:
@@ -234,22 +302,46 @@ def _extract_images(
                 continue
 
             img_dict = doc.extract_image(xref)
-            img_bytes = img_dict["image"]
-
-            if len(img_bytes) < MIN_IMG_BYTES:
+            if len(img_dict["image"]) < MIN_IMG_BYTES:
                 continue
 
             rects = page.get_image_rects(xref)
-            bbox = list(rects[0]) if rects else [0.0, 0.0, 0.0, 0.0]
+            if not rects:
+                continue
 
-            images.append({
-                "type": "image",
-                "content": img_bytes,
-                "boxes": [{"page": page_num, "bbox": bbox}]
-            })
+            bbox = list(rects[0])
+            if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+                continue
+
+            candidate_bboxes.append(bbox)
 
         except Exception:
             continue
+
+    if not candidate_bboxes:
+        return []
+
+    images = []
+    for cluster in _cluster_bboxes(candidate_bboxes, IMAGE_MERGE_GAP):
+        merged_bbox = _union_bbox([candidate_bboxes[i] for i in cluster])
+
+        try:
+            pix = page.get_pixmap(
+                matrix=pymupdf.Matrix(IMAGE_RENDER_ZOOM, IMAGE_RENDER_ZOOM),
+                clip=pymupdf.Rect(*merged_bbox),
+            )
+            img_bytes = pix.tobytes("jpg", jpg_quality=IMAGE_JPEG_QUALITY)
+        except Exception:
+            continue
+
+        if len(img_bytes) < MIN_IMG_BYTES:
+            continue
+
+        images.append({
+            "type": "image",
+            "content": img_bytes,
+            "boxes": [{"page": page_num, "bbox": merged_bbox}]
+        })
 
     return images
 
