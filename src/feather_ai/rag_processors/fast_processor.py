@@ -41,7 +41,12 @@ MIN_IMG_BYTES = 2048
 
 # Image merging: raw embedded image objects within this many PDF points of each
 # other are treated as fragments of the same figure and rendered as one crop.
-IMAGE_MERGE_GAP = 12.0
+# The vertical tolerance is larger than the horizontal one: a figure's caption
+# strip or axis row typically sits 13-16pt below its plot area (and must merge),
+# while side-by-side but unrelated panels/columns sit ~11pt apart horizontally
+# (and must stay separate).
+IMAGE_MERGE_GAP_X = 12.0
+IMAGE_MERGE_GAP_Y = 18.0
 IMAGE_RENDER_ZOOM = 2.0
 IMAGE_JPEG_QUALITY = 90
 
@@ -223,17 +228,21 @@ def _extract_via_ocr(
         return []
 
 
-def _bboxes_overlap_or_close(a: List[float], b: List[float], gap: float) -> bool:
-    """True if two axis-aligned boxes overlap or are within `gap` points of each other."""
+def _bboxes_overlap_or_close(
+        a: List[float], b: List[float], gap_x: float, gap_y: float
+) -> bool:
+    """True if two axis-aligned boxes overlap or are within the gap tolerances."""
     ax0, ay0, ax1, ay1 = a
     bx0, by0, bx1, by1 = b
     return not (
-        ax1 + gap < bx0 or bx1 + gap < ax0 or
-        ay1 + gap < by0 or by1 + gap < ay0
+        ax1 + gap_x < bx0 or bx1 + gap_x < ax0 or
+        ay1 + gap_y < by0 or by1 + gap_y < ay0
     )
 
 
-def _cluster_bboxes(bboxes: List[List[float]], gap: float) -> List[List[int]]:
+def _cluster_bboxes(
+        bboxes: List[List[float]], gap_x: float, gap_y: float
+) -> List[List[int]]:
     """
     Groups bbox indices into clusters of overlapping/adjacent boxes (union-find).
 
@@ -259,7 +268,7 @@ def _cluster_bboxes(bboxes: List[List[float]], gap: float) -> List[List[int]]:
 
     for i in range(n):
         for j in range(i + 1, n):
-            if _bboxes_overlap_or_close(bboxes[i], bboxes[j], gap):
+            if _bboxes_overlap_or_close(bboxes[i], bboxes[j], gap_x, gap_y):
                 union(i, j)
 
     clusters: Dict[int, List[int]] = {}
@@ -292,6 +301,7 @@ def _extract_images(
     PDF producer split it into.
     """
     candidate_bboxes: List[List[float]] = []
+    page_area = abs(page.rect) or 1.0
 
     for img_info in page.get_images(full=True):
         try:
@@ -305,15 +315,18 @@ def _extract_images(
             if len(img_dict["image"]) < MIN_IMG_BYTES:
                 continue
 
-            rects = page.get_image_rects(xref)
-            if not rects:
-                continue
-
-            bbox = list(rects[0])
-            if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
-                continue
-
-            candidate_bboxes.append(bbox)
+            # One XObject may be placed several times (e.g. a frame image
+            # reused across a filmstrip) — every placement is a fragment.
+            for rect in page.get_image_rects(xref):
+                bbox = list(rect)
+                if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+                    continue
+                # Near-full-page rects are backgrounds/watermarks; letting one
+                # into the clustering would union the whole page into a single
+                # "figure".
+                if abs(rect) / page_area > 0.8:
+                    continue
+                candidate_bboxes.append(bbox)
 
         except Exception:
             continue
@@ -322,8 +335,13 @@ def _extract_images(
         return []
 
     images = []
-    for cluster in _cluster_bboxes(candidate_bboxes, IMAGE_MERGE_GAP):
+    for cluster in _cluster_bboxes(candidate_bboxes, IMAGE_MERGE_GAP_X, IMAGE_MERGE_GAP_Y):
         merged_bbox = _union_bbox([candidate_bboxes[i] for i in cluster])
+
+        # Skip crops too small to be a meaningful standalone figure.
+        if (merged_bbox[2] - merged_bbox[0] < 40.0
+                or merged_bbox[3] - merged_bbox[1] < 30.0):
+            continue
 
         try:
             pix = page.get_pixmap(
