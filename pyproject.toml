@@ -1,6 +1,6 @@
 [project]
 name = "feather-ai-sdk"
-version = "0.1.27"
+version = "0.1.28"
 description = "The lightest Agentic AI Framework you'll ever see"
 authors = [{ name = "Luca Bozzetti" }]
 readme = "README.md"
@@ -16,6 +16,12 @@ dependencies = [
     "requests",
     "aiohttp",
     "certifi",
+    # rag_processors (FastProcessor / _doc_convert)
+    "pymupdf>=1.23.0",
+    "python-docx>=1.1.0",
+    "google-cloud-vision>=3.7.0",
+    "markdown>=3.5",
+    "weasyprint>=62.3",
 ]
 
 [build-system]
