@@ -218,6 +218,14 @@ class AIAgent(BaseAgent):
                         if response is not None and response.usage is not None:
                             yield "usage", response.usage
                         return
+                    if self.structured_output:
+                        # with_structured_output wraps the llm to return the parsed
+                        # pydantic object (no .content, no usage metadata on chunks),
+                        # so token-streaming it would crash — emit the parsed object
+                        # as a structured_response instead.
+                        response = await self.llm.ainvoke(messages)
+                        yield "structured_response", response
+                        return
                     aggregated = None
                     async for token in self.llm.astream(messages):
                         aggregated = token if aggregated is None else aggregated + token
