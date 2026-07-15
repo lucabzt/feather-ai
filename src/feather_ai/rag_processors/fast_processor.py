@@ -50,6 +50,20 @@ IMAGE_MERGE_GAP_Y = 18.0
 IMAGE_RENDER_ZOOM = 2.0
 IMAGE_JPEG_QUALITY = 90
 
+# Vector expansion: many figures are mostly vector art (boxes, arrows, plot
+# lines) with only a small raster part (a photo, a spectrogram). Extracting
+# just the raster placements crops a fragment out of the figure, so raster
+# placements act as ANCHORS that get expanded with nearby clusters of vector
+# drawings. Clusters made of vector graphics alone (fraction bars, table
+# rules, separators) are never emitted as figures.
+VECTOR_CLUSTER_TOLERANCE = 3.0
+# Drawing clusters spanning nearly the full page width/height are borders or
+# rules that would chain unrelated content into one giant "figure".
+MAX_VECTOR_SPAN_RATIO = 0.9
+# If vector expansion still balloons a figure to nearly the whole page, fall
+# back to the raster-only bbox rather than emitting a full-page crop.
+MAX_FIGURE_AREA_RATIO = 0.9
+
 
 # --- Validation Functions ---
 
@@ -287,6 +301,36 @@ def _union_bbox(bboxes: List[List[float]]) -> List[float]:
     ]
 
 
+def _vector_cluster_bboxes(page: pymupdf.Page) -> List[List[float]]:
+    """
+    Bboxes of clustered vector drawings on the page (candidate figure parts).
+
+    Diagram-style figures are often drawn entirely with vector operators; only
+    photos/textures inside them exist as raster XObjects. These clusters let
+    _extract_images grow a raster anchor to the full figure it belongs to.
+    """
+    try:
+        cluster_rects = page.cluster_drawings(
+            x_tolerance=VECTOR_CLUSTER_TOLERANCE,
+            y_tolerance=VECTOR_CLUSTER_TOLERANCE,
+        )
+    except Exception:
+        return []
+
+    page_width = page.rect.width or 1.0
+    page_height = page.rect.height or 1.0
+
+    bboxes = []
+    for rect in cluster_rects:
+        if rect.is_empty or rect.is_infinite:
+            continue
+        if (rect.width / page_width > MAX_VECTOR_SPAN_RATIO
+                or rect.height / page_height > MAX_VECTOR_SPAN_RATIO):
+            continue
+        bboxes.append(list(rect))
+    return bboxes
+
+
 def _extract_images(
         doc: pymupdf.Document,
         page: pymupdf.Page,
@@ -298,7 +342,9 @@ def _extract_images(
     Raw embedded image objects that overlap or sit right next to each other are
     merged into a single flattened crop rendered straight from the page, so one
     visual figure yields one chunk regardless of how many raster XObjects the
-    PDF producer split it into.
+    PDF producer split it into. Each merged raster region is then expanded with
+    the adjacent vector-drawing clusters, so a diagram that is mostly vector art
+    around an embedded photo is captured whole instead of as the photo alone.
     """
     candidate_bboxes: List[List[float]] = []
     page_area = abs(page.rect) or 1.0
@@ -334,9 +380,27 @@ def _extract_images(
     if not candidate_bboxes:
         return []
 
+    # Cluster raster placements and vector-drawing clusters together; raster
+    # entries occupy indices [0, n_raster) so clusters can be told apart below.
+    n_raster = len(candidate_bboxes)
+    all_bboxes = candidate_bboxes + _vector_cluster_bboxes(page)
+
     images = []
-    for cluster in _cluster_bboxes(candidate_bboxes, IMAGE_MERGE_GAP_X, IMAGE_MERGE_GAP_Y):
-        merged_bbox = _union_bbox([candidate_bboxes[i] for i in cluster])
+    for cluster in _cluster_bboxes(all_bboxes, IMAGE_MERGE_GAP_X, IMAGE_MERGE_GAP_Y):
+        raster_indices = [i for i in cluster if i < n_raster]
+        # Vector-only clusters are page furniture (fraction bars, table rules,
+        # decorations), not figures — a figure must contain raster content.
+        if not raster_indices:
+            continue
+
+        merged_bbox = _union_bbox([all_bboxes[i] for i in cluster])
+
+        # A runaway expansion (e.g. via a decorative frame) would crop nearly
+        # the whole page; fall back to the raster-only region instead.
+        merged_area = ((merged_bbox[2] - merged_bbox[0])
+                       * (merged_bbox[3] - merged_bbox[1]))
+        if merged_area / page_area > MAX_FIGURE_AREA_RATIO:
+            merged_bbox = _union_bbox([all_bboxes[i] for i in raster_indices])
 
         # Skip crops too small to be a meaningful standalone figure.
         if (merged_bbox[2] - merged_bbox[0] < 40.0
