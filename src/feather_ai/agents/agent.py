@@ -30,6 +30,29 @@ from ..internal_utils._tools import make_tool, react_agent_with_tooling, \
 _RETRYABLE_EXCEPTIONS = (ConnectionError, TimeoutError, OSError)
 
 
+def _structured_raw(response: Any) -> Any:
+    """The raw AIMessage backing a `with_structured_output(..., include_raw=True)`
+    response, so real usage_metadata survives for cost tracking. No-op for any
+    other response shape (plain messages, tool-calling responses)."""
+    if isinstance(response, dict) and "raw" in response:
+        return response["raw"]
+    return response
+
+
+def _unwrap_structured(response: Any) -> Any:
+    """Collapses a `with_structured_output(..., include_raw=True)` response back
+    to just the parsed object, matching the contract every caller of
+    AIResponse.content already expects. Re-raises the parsing error on failure
+    instead of silently returning None, since include_raw swallows what used to
+    be a raised exception."""
+    if isinstance(response, dict) and "parsed" in response:
+        parsed = response.get("parsed")
+        if parsed is None and response.get("parsing_error") is not None:
+            raise response["parsing_error"]
+        return parsed
+    return response
+
+
 class AIAgent(BaseAgent):
     """
     The AIAgent class represents an intelligent AI agent that can perform tool calling and give structured output.
@@ -61,7 +84,11 @@ class AIAgent(BaseAgent):
         provider_data = get_provider(model)
         self.llm: BaseChatModel | Runnable = provider_data[0]
         if self.structured_output and not tools:
-            self.llm = self.llm.with_structured_output(output_schema)
+            # include_raw=True keeps the raw AIMessage (and its usage_metadata)
+            # alongside the parsed object, instead of returning only the parsed
+            # object — otherwise the real token usage of every structured-output
+            # call is lost and cost tracking falls back to a text-length estimate.
+            self.llm = self.llm.with_structured_output(output_schema, include_raw=True)
         self.provider_str: str = provider_data[1]
         # Bind tools to LLM
         if tools:
@@ -107,11 +134,11 @@ class AIAgent(BaseAgent):
                     usage = extract_usage(response, self.llm)
                 else:
                     response = self.llm.invoke(messages)
-                    usage = extract_usage(response, self.llm)
+                    usage = extract_usage(_structured_raw(response), self.llm)
 
                 ## Check for structured output
                 if self.structured_output:
-                    return AIResponse(response, tool_calls, messages, usage=usage)
+                    return AIResponse(_unwrap_structured(response), tool_calls, messages, usage=usage)
                 elif self.image_generator:
                     return AIResponse(base64.b64decode(_get_image_base64(response.content)), tool_calls, messages, usage=usage)
                 else:
@@ -156,11 +183,11 @@ class AIAgent(BaseAgent):
                     usage = extract_usage(response, self.llm)
                 else:
                     response = await self.llm.ainvoke(messages)
-                    usage = extract_usage(response, self.llm)
+                    usage = extract_usage(_structured_raw(response), self.llm)
 
                 ## Check for structured output
                 if self.structured_output:
-                    return AIResponse(response, tool_calls, messages, usage=usage)
+                    return AIResponse(_unwrap_structured(response), tool_calls, messages, usage=usage)
                 elif self.image_generator:
                     return AIResponse(base64.b64decode(_get_image_base64(response)), tool_calls, messages, usage=usage)
                 else:
@@ -219,12 +246,16 @@ class AIAgent(BaseAgent):
                             yield "usage", response.usage
                         return
                     if self.structured_output:
-                        # with_structured_output wraps the llm to return the parsed
-                        # pydantic object (no .content, no usage metadata on chunks),
-                        # so token-streaming it would crash — emit the parsed object
-                        # as a structured_response instead.
+                        # with_structured_output wraps the llm to return a parsed
+                        # object (no .content), so token-streaming it would crash —
+                        # emit it as a structured_response instead. include_raw=True
+                        # keeps the raw AIMessage alongside it so real usage still
+                        # gets reported instead of silently dropped.
                         response = await self.llm.ainvoke(messages)
-                        yield "structured_response", response
+                        yield "structured_response", _unwrap_structured(response)
+                        usage = extract_usage(_structured_raw(response), self.llm)
+                        if usage is not None:
+                            yield "usage", usage
                         return
                     aggregated = None
                     async for token in self.llm.astream(messages):
